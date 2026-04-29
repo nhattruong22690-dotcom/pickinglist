@@ -259,15 +259,28 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
     COMPLETED: false
   });
 
-  const weekKeys = useMemo(() => {
-    const keys = Array.from(new Set(initialSessions.map(s => s.weekKey)));
-    return keys.sort((a, b) => b.localeCompare(a));
+  // Sync state with server props (VERY IMPORTANT for Next.js Revalidation)
+  useEffect(() => {
+    setSessions(initialSessions);
+    // Auto-select latest week if currently "all" and data just arrived
+    if (selectedWeek === "all" && initialSessions.length > 0) {
+      const keys = Array.from(new Set(initialSessions.map(s => s.weekKey)));
+      if (keys.length > 0) {
+        // Find the latest week or stay at all
+        // For now we stay at "all" but allow user to select
+      }
+    }
   }, [initialSessions]);
 
+  const weekKeys = useMemo(() => {
+    const keys = Array.from(new Set(sessions.map(s => s.weekKey).filter(Boolean)));
+    return keys.sort((a, b) => b.localeCompare(a));
+  }, [sessions]);
+
   const availableDates = useMemo(() => {
-    const dates = Array.from(new Set(initialSessions.map(s => s.pickingDate).filter(Boolean)));
+    const dates = Array.from(new Set(sessions.map(s => s.pickingDate).filter(Boolean)));
     return dates.sort((a, b) => b.localeCompare(a));
-  }, [initialSessions]);
+  }, [sessions]);
 
   const filteredSessions = useMemo(() => {
     return sessions.filter(session => {
