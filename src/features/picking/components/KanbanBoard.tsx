@@ -290,7 +290,7 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
   const [activeSession, setActiveSession] = useState<any | null>(null);
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({
     PENDING: false,
-    PROCESSING: true,
+    PROCESSING: false,
     COMPLETED: false
   });
 
