@@ -24,10 +24,6 @@ export async function getProductMasterData() {
   }));
 }
 
-/**
- * Lấy danh sách siêu thị chuẩn từ sheet "Supermarkets"
- * Cấu trúc: A: Code, B: Name
- */
 export async function getSupermarketMasterData() {
   try {
     const rows = await getSheetData("Supermarkets!A:B");
@@ -41,21 +37,24 @@ export async function getSupermarketMasterData() {
   }
 }
 
-export async function savePickingSessions(weekKey: string, sessions: { supermarket: string, items: { productName: string, quantity: number }[] }[]) {
+export async function savePickingSessions(weekKey: string, pickingDate: string, sessions: { supermarket: string, items: { productName: string, quantity: number }[] }[]) {
   try {
     const sheets = await getGoogleSheetsClient();
     const products = await getProductMasterData();
     const masterSupermarkets = await getSupermarketMasterData();
     const createdAt = new Date().toISOString();
     
-    // Đảm bảo tiêu đề cột Items
-    const headers = ["ID", "SessionID", "Supermarket", "ProductName", "Quantity", "SKU", "Specs", "UnitWeight(g)", "ActualQty", "IsPicked", "TotalWeight(kg)", "Packages"];
-    const firstRow = await getSheetData("Items!A1:L1");
-    if (firstRow.length === 0 || firstRow[0][0] !== "ID" || firstRow[0].length < headers.length) {
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID, range: "Items!A1:L1", valueInputOption: "RAW", requestBody: { values: [headers] },
-      });
-    }
+    // Cập nhật Tiêu đề Items (14 cột - thêm PickingDate)
+    const itemHeaders = ["ID", "SessionID", "SupermarketCode", "Supermarket", "ProductName", "Quantity", "SKU", "Specs", "UnitWeight(g)", "ActualQty", "IsPicked", "TotalWeight(kg)", "Packages", "PickingDate"];
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: "Items!A1:N1", valueInputOption: "RAW", requestBody: { values: [itemHeaders] },
+    });
+
+    // Cập nhật Tiêu đề Sessions (6 cột - thêm PickingDate)
+    const sessionHeaders = ["ID", "WeekKey", "Supermarket", "Status", "CreatedAt", "PickingDate"];
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: "Sessions!A1:F1", valueInputOption: "RAW", requestBody: { values: [sessionHeaders] },
+    });
 
     const sessionRows: any[] = [];
     const itemRows: any[] = [];
@@ -66,23 +65,23 @@ export async function savePickingSessions(weekKey: string, sessions: { supermark
     for (const sessionData of sessions) {
       const sessionId = uuidv4();
       
-      // ĐỒNG BỘ TÊN SIÊU THỊ: Ưu tiên lấy từ master "Supermarkets" (Cột B: Name)
       const normalizedExcelSupermarket = normalize(sessionData.supermarket);
-      const matched = masterSupermarkets.find(s => normalize(s.name) === normalizedExcelSupermarket);
-      const finalSupermarketName = matched ? matched.name : sessionData.supermarket;
+      const matchedSM = masterSupermarkets.find(s => normalize(s.name) === normalizedExcelSupermarket);
+      const finalSupermarketCode = matchedSM ? matchedSM.code : "";
+      const finalSupermarketName = matchedSM ? matchedSM.name : sessionData.supermarket;
 
-      sessionRows.push([sessionId, weekKey, finalSupermarketName, "PENDING", createdAt]);
+      sessionRows.push([sessionId, weekKey, finalSupermarketName, "PENDING", createdAt, pickingDate]);
 
       sessionData.items.forEach(item => {
         const normalizedExcelName = normalize(item.productName);
-        const master = products.find(p => normalize(p.name) === normalizedExcelName);
+        const masterProd = products.find(p => normalize(p.name) === normalizedExcelName);
         
-        const finalProductName = master ? master.name : item.productName;
+        const finalProductName = masterProd ? masterProd.name : item.productName;
         
         let calculatedWeightKg = 0;
         let packages = 0;
-        const specs = parseFloat(master?.specs || "1");
-        const unitWeightGram = parseFloat(master?.weight || "0");
+        const specs = parseFloat(masterProd?.specs || "1");
+        const unitWeightGram = parseFloat(masterProd?.weight || "0");
 
         if (!isNaN(specs) && specs > 0) {
           packages = parseFloat((item.quantity / specs).toFixed(2));
@@ -92,18 +91,17 @@ export async function savePickingSessions(weekKey: string, sessions: { supermark
         }
 
         itemRows.push([
-          uuidv4(), sessionId, finalSupermarketName, finalProductName, item.quantity,
-          master?.sku || "", master?.specs || "", master?.weight || "", 
-          "", "FALSE", calculatedWeightKg, packages
+          uuidv4(), sessionId, finalSupermarketCode, finalSupermarketName, finalProductName, item.quantity,
+          masterProd?.sku || "", masterProd?.specs || "", masterProd?.weight || "", "", "FALSE", calculatedWeightKg, packages, pickingDate
         ]);
       });
     }
 
     await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID, range: "Sessions!A:E", valueInputOption: "RAW", requestBody: { values: sessionRows },
+      spreadsheetId: SHEET_ID, range: "Sessions!A:F", valueInputOption: "RAW", requestBody: { values: sessionRows },
     });
     await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID, range: "Items!A:L", valueInputOption: "RAW", requestBody: { values: itemRows },
+      spreadsheetId: SHEET_ID, range: "Items!A:N", valueInputOption: "RAW", requestBody: { values: itemRows },
     });
 
     revalidatePath("/");
@@ -122,7 +120,7 @@ export async function updatePickingItem(itemId: string, sessionId: string, actua
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `Items!I${itemRowIndex + 1}:J${itemRowIndex + 1}`,
+      range: `Items!J${itemRowIndex + 1}:K${itemRowIndex + 1}`,
       valueInputOption: "RAW",
       requestBody: { values: [[actualQty, isPicked ? "TRUE" : "FALSE"]] },
     });
@@ -162,19 +160,17 @@ export async function updateSessionStatus(id: string, status: string) {
 
 export async function getSessions() {
   try {
-    const sessionRows = await getSheetData("Sessions!A:E");
-    const itemRows = await getSheetData("Items!A:L");
+    const sessionRows = await getSheetData("Sessions!A:F");
+    const itemRows = await getSheetData("Items!A:N");
     const sessionsData = sessionRows[0]?.[0] === "ID" ? sessionRows.slice(1) : sessionRows;
     const itemsData = itemRows[0]?.[0] === "ID" ? itemRows.slice(1) : itemRows;
 
     return sessionsData.map(row => ({
-      id: row[0], weekKey: row[1], supermarket: row[2], status: row[3], createdAt: row[4],
+      id: row[0], weekKey: row[1], supermarket: row[2], status: row[3], createdAt: row[4], pickingDate: row[5],
       items: itemsData.filter(item => item[1] === row[0]).map(item => ({
-        id: item[0], productName: item[3], quantity: parseInt(item[4]),
-        sku: item[5], specs: item[6], weight: item[7], 
-        actualQty: item[8], isPicked: item[9] === "TRUE",
-        totalWeightKg: item[10],
-        packages: item[11]
+        id: item[0], supermarketCode: item[2], supermarket: item[3], productName: item[4], quantity: parseInt(item[5]),
+        sku: item[6], specs: item[7], weight: item[8], actualQty: item[9], isPicked: item[10] === "TRUE",
+        totalWeightKg: item[11], packages: item[12], pickingDate: item[13]
       }))
     }));
   } catch (error) {

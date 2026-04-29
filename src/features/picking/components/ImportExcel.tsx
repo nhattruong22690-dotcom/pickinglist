@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import * as XLSX from "xlsx";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, FileSpreadsheet, CheckCircle2, XCircle, Save, Calendar } from "lucide-react";
+import { Upload, FileSpreadsheet, CheckCircle2, XCircle, Save, Calendar, Clock } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { savePickingSessions } from "../actions/picking";
 
@@ -11,6 +11,7 @@ export const ImportExcel = () => {
   const [data, setData] = useState<any[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [weekKey, setWeekKey] = useState("");
+  const [pickingDate, setPickingDate] = useState(new Date().toISOString().split('T')[0]);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -39,10 +40,13 @@ export const ImportExcel = () => {
       setMessage({ type: 'error', text: "Vui lòng nhập Tuần (Week Key)!" });
       return;
     }
+    if (!pickingDate) {
+      setMessage({ type: 'error', text: "Vui lòng chọn Ngày soạn!" });
+      return;
+    }
 
     setIsLoading(true);
     
-    // Split into one session per row (supermarket)
     const sessionsToSave: any[] = [];
     
     data.forEach((row) => {
@@ -68,11 +72,11 @@ export const ImportExcel = () => {
       }
     });
 
-    const result = await savePickingSessions(weekKey, sessionsToSave);
+    const result = await savePickingSessions(weekKey, pickingDate, sessionsToSave);
     setIsLoading(false);
 
     if (result.success) {
-      setMessage({ type: 'success', text: `Đã tạo ${sessionsToSave.length} Picking List thành công!` });
+      setMessage({ type: 'success', text: `Đã tạo ${sessionsToSave.length} Picking List thành công cho ngày ${pickingDate}!` });
       setData([]);
       setHeaders([]);
       setWeekKey("");
@@ -107,23 +111,36 @@ export const ImportExcel = () => {
             exit={{ opacity: 0, height: 0 }}
             className="space-y-6"
           >
-            <div className="flex flex-col md:flex-row gap-4 items-end justify-between bg-[var(--secondary)] p-6 border-l-4 border-[var(--primary)]">
-              <div className="flex-1 space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                  <Calendar size={12} className="text-[var(--primary)]" /> Nhập Mã Tuần
-                </label>
-                <input 
-                  type="text" 
-                  value={weekKey}
-                  onChange={(e) => setWeekKey(e.target.value)}
-                  placeholder="Ví dụ: TUAN-18-2026"
-                  className="w-full bg-black border border-white/10 px-4 py-3 text-sm text-white focus:outline-none focus:border-[var(--primary)] transition-colors uppercase font-mono"
-                />
+            <div className="bg-[var(--secondary)] p-6 border-l-4 border-[var(--primary)] space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+                    <Calendar size={12} className="text-[var(--primary)]" /> Nhập Mã Tuần
+                  </label>
+                  <input 
+                    type="text" 
+                    value={weekKey}
+                    onChange={(e) => setWeekKey(e.target.value)}
+                    placeholder="Ví dụ: TUAN-18-2026"
+                    className="w-full bg-black border border-white/10 px-4 py-3 text-sm text-white focus:outline-none focus:border-[var(--primary)] transition-colors uppercase font-mono"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+                    <Clock size={12} className="text-[var(--accent)]" /> Chọn Ngày Soạn
+                  </label>
+                  <input 
+                    type="date" 
+                    value={pickingDate}
+                    onChange={(e) => setPickingDate(e.target.value)}
+                    className="w-full bg-black border border-white/10 px-4 py-3 text-sm text-white focus:outline-none focus:border-[var(--primary)] transition-colors"
+                  />
+                </div>
               </div>
               <button 
                 onClick={handleSave}
                 disabled={isLoading}
-                className="cyber-button w-full md:w-auto flex items-center justify-center gap-2"
+                className="cyber-button w-full flex items-center justify-center gap-2"
               >
                 {isLoading ? "ĐANG TÁCH TASK..." : <><Save size={16} /> TẠO {data.length} PICKING LISTS</>}
               </button>
