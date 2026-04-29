@@ -1,94 +1,138 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
+import Link from "next/link";
 import { 
-  LayoutDashboard,
-  Boxes,
-  Truck,
-  FileUp,
-  Columns4,
-  Settings,
-  ChevronRight
+  LayoutDashboard, 
+  Settings, 
+  LogOut, 
+  ClipboardList, 
+  Menu,
+  X,
+  ChevronRight,
+  Database,
+  BarChart3
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
-export const Sidebar = ({ activeTab }: { activeTab: string }) => {
+interface SidebarProps {
+  activeTab: "picking" | "master" | "dashboard" | "settings";
+}
+
+export const Sidebar = ({ activeTab }: SidebarProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+
   const menuItems = [
-    { id: "dashboard", icon: LayoutDashboard, label: "Tổng Quan", href: "/" },
-    { id: "import", icon: FileUp, label: "Nhập Dữ Liệu", href: "/import" },
-    { id: "picking", icon: Columns4, label: "Soạn Hàng", href: "/picking" },
-    { id: "inventory", icon: Boxes, label: "Tồn Kho", href: "#" },
-    { id: "shipping", icon: Truck, label: "Giao Hàng", href: "#" },
+    { id: "picking", label: "Soạn hàng", icon: ClipboardList, href: "/picking" },
+    { id: "master", label: "Dữ liệu gốc", icon: Database, href: "/master-data" },
+    { id: "dashboard", label: "Thống kê", icon: BarChart3, href: "#" },
+    { id: "settings", label: "Cài đặt", icon: Settings, href: "#" },
   ];
 
-  return (
-    <motion.aside 
-      initial={{ width: 80 }}
-      whileHover={{ width: 240 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="h-screen border-r border-white/10 flex flex-col py-8 glass-panel z-50 group/sidebar overflow-hidden sticky top-0"
-    >
-      {/* Logo */}
-      <div className="flex items-center px-6 mb-12 gap-4">
-        <div className="w-8 h-8 min-w-[32px] bg-[var(--primary)] flex items-center justify-center text-black font-black text-xl">
-          W
-        </div>
-        <span className="text-white font-black tracking-tighter uppercase whitespace-nowrap opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300">
-          Warehouse <span className="text-[var(--primary)]">SaaS</span>
-        </span>
-      </div>
-      
-      {/* Navigation */}
-      <nav className="flex-1 flex flex-col gap-2 px-3">
-        {menuItems.map((item) => (
-          <Link key={item.id} href={item.href}>
-            <div className={cn(
-              "flex items-center gap-4 px-4 py-3 rounded-none transition-all relative group/item",
-              activeTab === item.id 
-                ? "bg-[var(--primary)]/10 border-l-2 border-[var(--primary)]" 
-                : "hover:bg-white/5 border-l-2 border-transparent"
-            )}>
-              <item.icon 
-                className={cn(
-                  "min-w-[24px] transition-transform duration-300 group-hover/item:scale-110",
-                  activeTab === item.id ? "text-[var(--primary)]" : "text-gray-500 group-hover/item:text-white"
-                )} 
-                size={24} 
-              />
-              <span className={cn(
-                "whitespace-nowrap uppercase text-[10px] font-bold tracking-widest transition-all duration-300 opacity-0 group-hover/sidebar:opacity-100",
-                activeTab === item.id ? "text-white" : "text-gray-500 group-hover/item:text-white"
-              )}>
-                {item.label}
-              </span>
-
-              {/* Subtle indicator for active tab when collapsed */}
-              {activeTab === item.id && (
-                <div className="absolute right-0 w-1 h-4 bg-[var(--primary)] opacity-100 group-hover/sidebar:opacity-0 transition-opacity" />
-              )}
-            </div>
-          </Link>
-        ))}
-      </nav>
-      
-      {/* Footer Info */}
-      <div className="mt-auto px-6 space-y-6">
-        <div className="flex items-center gap-4 text-gray-500 hover:text-white cursor-pointer transition-colors group/settings">
-          <Settings size={20} className="min-w-[20px] group-hover/settings:rotate-90 transition-transform duration-500" />
-          <span className="text-[10px] font-bold uppercase tracking-widest opacity-0 group-hover/sidebar:opacity-100 transition-opacity">
-            Cài đặt
-          </span>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="text-[10px] -rotate-90 text-gray-700 font-bold whitespace-nowrap tracking-[0.5em] group-hover/sidebar:rotate-0 group-hover/sidebar:text-[8px] transition-all duration-300">
-            v1.0.42
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full py-8">
+      {/* Brand Header */}
+      <div className="px-6 mb-12">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-[var(--primary)] flex items-center justify-center rounded-sm">
+            <span className="text-black font-black text-xl">P</span>
           </div>
-          <div className="h-[1px] flex-1 bg-white/5 opacity-0 group-hover/sidebar:opacity-100 transition-opacity" />
+          <div>
+            <h2 className="text-white font-black tracking-tighter text-lg leading-none">PICKING</h2>
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest">SaaS / v1.0</span>
+          </div>
         </div>
       </div>
-    </motion.aside>
+
+      {/* Navigation */}
+      <nav className="flex-1 space-y-1 px-3">
+        {menuItems.map((item) => {
+          const isActive = activeTab === item.id;
+          return (
+            <Link 
+              key={item.id} 
+              href={item.href}
+              onClick={() => setIsOpen(false)}
+              className={cn(
+                "group flex items-center justify-between px-4 py-4 rounded-sm transition-all relative overflow-hidden",
+                isActive 
+                  ? "bg-[var(--primary)] text-black font-black" 
+                  : "text-gray-500 hover:text-white hover:bg-white/5"
+              )}
+            >
+              <div className="flex items-center gap-4 relative z-10">
+                <item.icon size={20} className={cn(isActive ? "text-black" : "group-hover:text-[var(--primary)]")} />
+                <span className="text-[10px] uppercase tracking-[0.2em]">{item.label}</span>
+              </div>
+              {isActive && (
+                <motion.div 
+                  layoutId="active-indicator"
+                  className="absolute right-2 w-1.5 h-1.5 bg-black rounded-full"
+                />
+              )}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Footer */}
+      <div className="px-3 pt-4 border-t border-white/5">
+        <button className="w-full flex items-center gap-4 px-4 py-4 text-gray-600 hover:text-red-500 hover:bg-red-500/5 rounded-sm transition-all">
+          <LogOut size={20} />
+          <span className="text-[10px] uppercase tracking-[0.2em]">Đăng xuất</span>
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Mobile Menu Button - Only visible on small screens */}
+      <button 
+        onClick={() => setIsOpen(true)}
+        className="lg:hidden fixed top-6 right-6 z-[60] w-12 h-12 bg-white/5 backdrop-blur-md border border-white/10 rounded-sm flex items-center justify-center text-white active:scale-95 transition-all shadow-2xl"
+      >
+        <Menu size={24} />
+      </button>
+
+      {/* Static Sidebar for Large Screens */}
+      <aside className="hidden lg:flex w-72 h-screen border-r border-white/5 bg-black flex-col sticky top-0 shrink-0">
+        <SidebarContent />
+      </aside>
+
+      {/* Mobile Drawer Sidebar */}
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] lg:hidden"
+            />
+            
+            {/* Drawer */}
+            <motion.aside 
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed top-0 left-0 bottom-0 w-80 bg-[#0a0a0a] z-[80] border-r border-white/10 lg:hidden shadow-2xl shadow-black/100"
+            >
+              <button 
+                onClick={() => setIsOpen(false)}
+                className="absolute top-6 right-6 p-2 text-gray-500 hover:text-white"
+              >
+                <X size={24} />
+              </button>
+              <SidebarContent />
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   );
 };
