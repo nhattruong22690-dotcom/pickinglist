@@ -49,7 +49,6 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
     const masterSupermarkets = await getSupermarketMasterData();
     const createdAt = new Date().toISOString();
     
-    // Cập nhật Tiêu đề
     const itemHeaders = ["ID", "SessionID", "SupermarketCode", "Supermarket", "ProductName", "Quantity", "SKU", "Specs", "UnitWeight(g)", "ActualQty", "IsPicked", "TotalWeight(kg)", "Packages", "PickingDate"];
     const sessionHeaders = ["ID", "WeekKey", "Supermarket", "Status", "CreatedAt", "PickingDate"];
 
@@ -113,9 +112,12 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
   }
 }
 
+// Cập nhật Item và tự động tính toán Status cho Session
 export async function updatePickingItem(itemId: string, sessionId: string, actualQty: number | string, isPicked: boolean) {
   try {
     const sheets = await getGoogleSheetsClient();
+    
+    // 1. Cập nhật Item trước
     const itemRows = await getSheetData("Items!A:A");
     const itemRowIndex = itemRows.findIndex(row => (row[0] || "").toString().trim() === itemId.trim());
     if (itemRowIndex === -1) throw new Error("Item not found");
@@ -127,16 +129,35 @@ export async function updatePickingItem(itemId: string, sessionId: string, actua
       requestBody: { values: [[actualQty, isPicked ? "TRUE" : "FALSE"]] },
     });
 
-    const sessionRows = await getSheetData("Sessions!A:D");
+    // 2. Lấy tất cả items của session này để tính toán trạng thái tự động
+    const allItemsOfSession = await getSheetData("Items!A:K");
+    const sessionItems = allItemsOfSession.filter(row => (row[1] || "").toString().trim() === sessionId.trim());
+    
+    const totalItems = sessionItems.length;
+    const pickedItems = sessionItems.filter(row => (row[10] || "").toString().toUpperCase() === "TRUE").length;
+    
+    let newStatus = "PENDING";
+    if (pickedItems === totalItems && totalItems > 0) {
+      newStatus = "COMPLETED";
+    } else if (pickedItems > 0) {
+      newStatus = "PROCESSING";
+    }
+
+    // 3. Cập nhật Session Status
+    const sessionRows = await getSheetData("Sessions!A:A");
     const sessionRowIndex = sessionRows.findIndex(row => (row[0] || "").toString().trim() === sessionId.trim());
-    if (sessionRowIndex !== -1 && (sessionRows[sessionRowIndex][3] || "").toString().trim() === "PENDING") {
+    
+    if (sessionRowIndex !== -1) {
       await sheets.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID, range: `Sessions!D${sessionRowIndex + 1}`, valueInputOption: "RAW", requestBody: { values: [["PROCESSING"]] },
+        spreadsheetId: SHEET_ID,
+        range: `Sessions!D${sessionRowIndex + 1}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [[newStatus]] },
       });
     }
 
     revalidatePath("/picking");
-    return { success: true };
+    return { success: true, newStatus };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
@@ -165,7 +186,6 @@ export async function getSessions() {
     const sessionRows = await getSheetData("Sessions!A:F");
     const itemRows = await getSheetData("Items!A:N");
     
-    // Bỏ qua header nếu ô đầu tiên là "ID" (không phân biệt hoa thường)
     const sessionsData = (sessionRows.length > 0 && (sessionRows[0][0] || "").toString().toUpperCase() === "ID") 
       ? sessionRows.slice(1) : sessionRows;
     const itemsData = (itemRows.length > 0 && (itemRows[0][0] || "").toString().toUpperCase() === "ID") 

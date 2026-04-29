@@ -2,8 +2,8 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Clock, Play, CheckCircle, MoreVertical, Package, ArrowRight, Store,
+import { 
+  Clock, Play, CheckCircle, MoreVertical, Package, ArrowRight, Store, 
   Check, Save, Weight, Box, Search, Calendar, X, ChevronRight,
   ChevronLeft, ArrowLeft, ChevronDown, Scale, Layers, ChevronUp,
   LayoutDashboard, ClipboardList, Filter, Boxes
@@ -13,7 +13,7 @@ import { updateSessionStatus, updatePickingItem } from "../actions/picking";
 
 // --- Sub-component for Picking Item Row ---
 
-const PickingItemRow = ({ item, sessionId, onUpdate }: { item: any, sessionId: string, onUpdate: () => void }) => {
+const PickingItemRow = ({ item, sessionId, onUpdateLocal }: { item: any, sessionId: string, onUpdateLocal: (itemId: string, qty: string, picked: boolean) => void }) => {
   const [actualQty, setActualQty] = useState(item.actualQty || "");
   const [isPicked, setIsPicked] = useState(item.isPicked);
   const [isSaving, setIsSaving] = useState(false);
@@ -26,8 +26,9 @@ const PickingItemRow = ({ item, sessionId, onUpdate }: { item: any, sessionId: s
   const handleManualSave = async () => {
     if (isSaving) return;
     setIsSaving(true);
+    // Optimistic Update
+    onUpdateLocal(item.id, actualQty, isPicked);
     const result = await updatePickingItem(item.id, sessionId, actualQty, isPicked);
-    if (result.success) onUpdate();
     setIsSaving(false);
   };
 
@@ -45,16 +46,19 @@ const PickingItemRow = ({ item, sessionId, onUpdate }: { item: any, sessionId: s
       setActualQty("0");
     }
     setIsPicked(nextPickedState);
+    
+    // Optimistic Update - Update local state immediately
+    onUpdateLocal(item.id, nextQty, nextPickedState);
+    
     setIsSaving(true);
-    const result = await updatePickingItem(item.id, sessionId, nextQty, nextPickedState);
-    if (result.success) onUpdate();
+    await updatePickingItem(item.id, sessionId, nextQty, nextPickedState);
     setIsSaving(false);
   };
 
   return (
-    <motion.div
+    <motion.div 
       initial={false}
-      animate={{
+      animate={{ 
         backgroundColor: isPicked ? "rgba(34, 197, 94, 0.15)" : "rgba(255, 255, 255, 0)",
         borderColor: isPicked ? "rgba(34, 197, 94, 0.3)" : "rgba(255, 255, 255, 0.05)"
       }}
@@ -76,9 +80,9 @@ const PickingItemRow = ({ item, sessionId, onUpdate }: { item: any, sessionId: s
         <div className="flex flex-wrap gap-3">
           {item.sku && <span className="text-[9px] bg-white/5 px-2 py-0.5 border border-white/10 text-gray-500 font-mono rounded-sm">{item.sku}</span>}
           <div className="flex items-center gap-3">
-            {item.specs && <span className="text-[9px] text-gray-600 flex items-center gap-1"><Box size={10} /> {item.specs}</span>}
-            {item.packages > 0 && <span className="text-[9px] text-[var(--primary)] font-bold flex items-center gap-1"><Layers size={10} /> {item.packages} KIỆN</span>}
-            {item.totalWeightKg > 0 && <span className="text-[9px] text-[var(--accent)] font-bold flex items-center gap-1"><Scale size={10} /> {item.totalWeightKg}KG</span>}
+             {item.specs && <span className="text-[9px] text-gray-600 flex items-center gap-1"><Box size={10} /> {item.specs}</span>}
+             {item.packages > 0 && <span className="text-[9px] text-[var(--primary)] font-bold flex items-center gap-1"><Layers size={10} /> {item.packages} KIỆN</span>}
+             {item.totalWeightKg > 0 && <span className="text-[9px] text-[var(--accent)] font-bold flex items-center gap-1"><Scale size={10} /> {item.totalWeightKg}KG</span>}
           </div>
         </div>
       </div>
@@ -95,7 +99,7 @@ const PickingItemRow = ({ item, sessionId, onUpdate }: { item: any, sessionId: s
 
 // --- Modal Component ---
 
-const PickingModal = ({ session, filteredSessions, onClose, onUpdate, onSwitchSession }: { session: any, filteredSessions: any[], onClose: () => void, onUpdate: () => void, onSwitchSession: (s: any) => void }) => {
+const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwitchSession }: { session: any, filteredSessions: any[], onClose: () => void, onUpdateLocal: any, onSwitchSession: (s: any) => void }) => {
   const [isSelectorOpen, setIsSelectorOpen] = useState(false);
   const currentIndex = filteredSessions.findIndex(s => s.id === session.id);
   const pickedCount = session.items.filter((i: any) => i.isPicked).length;
@@ -107,30 +111,30 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdate, onSwitchSe
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-4 bg-black/95 backdrop-blur-md">
       <motion.div key={session.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full h-full md:h-auto md:max-w-2xl bg-[#0a0a0a] border border-white/10 shadow-2xl flex flex-col overflow-hidden relative">
         <div className="px-4 py-4 bg-white/5 border-b border-white/10 flex items-center justify-between gap-4">
-          <button onClick={() => setIsSelectorOpen(!isSelectorOpen)} className="flex-1 flex items-center justify-between bg-black border border-white/10 px-4 py-3 group hover:border-[var(--primary)] transition-all">
-            <div className="flex items-center gap-3 overflow-hidden"><Store className="text-[var(--primary)] shrink-0" size={20} /><span className="text-sm font-black text-white uppercase tracking-tighter truncate">{currentIndex + 1}. {session.supermarket}</span></div>
-            <ChevronDown className={cn("text-gray-500 group-hover:text-white transition-transform", isSelectorOpen && "rotate-180")} size={20} />
-          </button>
-          <div className="flex items-center gap-1">
-            <button onClick={() => currentIndex > 0 && onSwitchSession(filteredSessions[currentIndex - 1])} disabled={currentIndex === 0} className="p-3 hover:bg-white/10 disabled:opacity-20 text-white transition-all"><ChevronLeft size={24} /></button>
-            <button onClick={() => currentIndex < filteredSessions.length - 1 && onSwitchSession(filteredSessions[currentIndex + 1])} disabled={currentIndex === filteredSessions.length - 1} className="p-3 hover:bg-white/10 disabled:opacity-20 text-white transition-all"><ChevronRight size={24} /></button>
-            <div className="w-[1px] h-6 bg-white/10 mx-2" />
-            <button onClick={onClose} className="p-3 hover:bg-red-500/20 text-gray-500 hover:text-red-500 transition-all rounded-full"><X size={24} /></button>
-          </div>
+           <button onClick={() => setIsSelectorOpen(!isSelectorOpen)} className="flex-1 flex items-center justify-between bg-black border border-white/10 px-4 py-3 group hover:border-[var(--primary)] transition-all">
+              <div className="flex items-center gap-3 overflow-hidden"><Store className="text-[var(--primary)] shrink-0" size={20} /><span className="text-sm font-black text-white uppercase tracking-tighter truncate">{currentIndex + 1}. {session.supermarket}</span></div>
+              <ChevronDown className={cn("text-gray-500 group-hover:text-white transition-transform", isSelectorOpen && "rotate-180")} size={20} />
+           </button>
+           <div className="flex items-center gap-1">
+              <button onClick={() => currentIndex > 0 && onSwitchSession(filteredSessions[currentIndex - 1])} disabled={currentIndex === 0} className="p-3 hover:bg-white/10 disabled:opacity-20 text-white transition-all"><ChevronLeft size={24} /></button>
+              <button onClick={() => currentIndex < filteredSessions.length - 1 && onSwitchSession(filteredSessions[currentIndex + 1])} disabled={currentIndex === filteredSessions.length - 1} className="p-3 hover:bg-white/10 disabled:opacity-20 text-white transition-all"><ChevronRight size={24} /></button>
+              <div className="w-[1px] h-6 bg-white/10 mx-2" />
+              <button onClick={onClose} className="p-3 hover:bg-red-500/20 text-gray-500 hover:text-red-500 transition-all rounded-full"><X size={24} /></button>
+           </div>
         </div>
         <AnimatePresence>{isSelectorOpen && (<motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="absolute top-[80px] left-0 w-full bg-[#0a0a0a] z-[110] border-b border-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden"><div className="max-h-[60vh] overflow-y-auto">{filteredSessions.map((s, idx) => { const pCount = s.items.filter((i: any) => i.isPicked).length; const tCount = s.items.length; const percent = Math.round((pCount / tCount) * 100); const isCurrent = s.id === session.id; return (<button key={s.id} onClick={() => { onSwitchSession(s); setIsSelectorOpen(false); }} className={cn("w-full text-left px-6 py-6 border-b border-white/5 flex items-center justify-between transition-all active:bg-white/10", isCurrent ? "bg-[var(--primary)]/10 border-l-4 border-l-[var(--primary)]" : "hover:bg-white/[0.03] border-l-4 border-l-transparent")}><div className="flex flex-col gap-1"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Siêu thị {idx + 1}</span><span className={cn("text-lg font-black uppercase tracking-tight", isCurrent ? "text-[var(--primary)]" : "text-white")}>{s.supermarket}</span></div><div className="flex items-center gap-4"><div className="flex flex-col items-end"><span className="text-[10px] font-bold text-gray-500 uppercase">{pCount}/{tCount} MÓN</span><span className={cn("text-xl font-black", percent === 100 ? "text-green-500" : "text-[var(--accent)]")}>{percent}%</span></div><ChevronRight className="text-gray-700" size={20} /></div></button>); })}</div><button onClick={() => setIsSelectorOpen(false)} className="w-full py-4 bg-white/5 text-[10px] font-black uppercase tracking-[0.5em] text-gray-500 hover:text-white transition-all">Đóng danh sách</button></motion.div>)}</AnimatePresence>
         <div className="px-6 py-4 bg-white/[0.02] border-b border-white/5 flex items-center justify-between gap-6">
-          <div className="flex flex-col"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Tiến độ nhặt hàng:</span><div className="text-xl font-black text-white">{pickedCount}/{totalCount} <span className="text-[10px] text-gray-600 font-normal ml-2 tracking-widest">MÓN XONG</span></div></div>
-          <div className="flex flex-col items-end"><div className="flex items-center gap-6"><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-widest flex items-center gap-1"><Layers size={10} /> Tổng Số Kiện:</span><div className="text-lg font-black text-white">{totalPackages}</div></div><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--accent)] uppercase tracking-widest flex items-center gap-1"><Scale size={10} /> Tổng Trọng Lượng:</span><div className="text-lg font-black text-white">{totalWeightKg} <span className="text-[10px] text-gray-600">KG</span></div></div></div></div>
+           <div className="flex flex-col"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Tiến độ nhặt hàng:</span><div className="text-xl font-black text-white">{pickedCount}/{totalCount} <span className="text-[10px] text-gray-600 font-normal ml-2 tracking-widest">MÓN XONG</span></div></div>
+           <div className="flex flex-col items-end"><div className="flex items-center gap-6"><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-widest flex items-center gap-1"><Layers size={10} /> Tổng Số Kiện:</span><div className="text-lg font-black text-white">{totalPackages}</div></div><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--accent)] uppercase tracking-widest flex items-center gap-1"><Scale size={10} /> Tổng Trọng Lượng:</span><div className="text-lg font-black text-white">{totalWeightKg} <span className="text-[10px] text-gray-600">KG</span></div></div></div></div>
         </div>
         <div className="flex-1 overflow-y-auto max-h-[60vh] bg-black">
           <div className="space-y-0">
-            <div className="grid grid-cols-12 gap-2 px-4 py-3 text-[10px] font-black text-gray-600 uppercase tracking-widest border-b border-white/10 sticky top-0 bg-black z-10">
-              <div className="col-span-2 text-center">XÁC NHẬN</div>
-              <div className="col-span-6">SẢN PHẨM</div>
-              <div className="col-span-4 text-right">SỐ LƯỢNG</div>
-            </div>
-            {session.items.map((item: any) => (<PickingItemRow key={item.id} item={item} sessionId={session.id} onUpdate={onUpdate} />))}
+              <div className="grid grid-cols-12 gap-2 px-4 py-3 text-[10px] font-black text-gray-600 uppercase tracking-widest border-b border-white/10 sticky top-0 bg-black z-10">
+                <div className="col-span-2 text-center">XÁC NHẬN</div>
+                <div className="col-span-6">SẢN PHẨM</div>
+                <div className="col-span-4 text-right">SỐ LƯỢNG</div>
+              </div>
+              {session.items.map((item: any) => (<PickingItemRow key={item.id} item={item} sessionId={session.id} onUpdateLocal={onUpdateLocal} />))}
           </div>
         </div>
         <div className="p-6 bg-white/5 border-t border-white/10 flex justify-between items-center">
@@ -150,9 +154,9 @@ const SummaryTable = ({ items }: { items: any[] }) => {
     items.forEach(item => {
       const key = item.productName;
       if (!map.has(key)) {
-        map.set(key, {
-          name: item.productName,
-          sku: item.sku,
+        map.set(key, { 
+          name: item.productName, 
+          sku: item.sku, 
           specs: parseFloat(item.specs) || 1,
           totalQty: 0,
           totalWeight: 0
@@ -290,10 +294,45 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
     COMPLETED: false
   });
 
-  // Sync state with server props (VERY IMPORTANT for Next.js Revalidation)
+  // Sync state with server props
   useEffect(() => {
     setSessions(initialSessions);
   }, [initialSessions]);
+
+  const updateItemLocally = (itemId: string, qty: string, picked: boolean) => {
+    setSessions(prev => {
+      return prev.map(session => {
+        // Find if this session contains the item
+        const hasItem = session.items.some((i: any) => i.id === itemId);
+        if (!hasItem) return session;
+
+        // Update the item
+        const updatedItems = session.items.map((i: any) => 
+          i.id === itemId ? { ...i, actualQty: qty, isPicked: picked } : i
+        );
+
+        // Recalculate Session Status Automatically
+        const total = updatedItems.length;
+        const pickedCount = updatedItems.filter((i: any) => i.isPicked).length;
+        
+        let newStatus = "PENDING";
+        if (pickedCount === total && total > 0) {
+          newStatus = "COMPLETED";
+        } else if (pickedCount > 0) {
+          newStatus = "PROCESSING";
+        }
+
+        const updatedSession = { ...session, items: updatedItems, status: newStatus };
+        
+        // If this is the active session in modal, update it too
+        if (activeSession && activeSession.id === session.id) {
+          setActiveSession(updatedSession);
+        }
+
+        return updatedSession;
+      });
+    });
+  };
 
   const weekKeys = useMemo(() => {
     const keys = Array.from(new Set(sessions.map(s => s.weekKey).filter(Boolean)));
@@ -355,7 +394,7 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
             <input type="text" placeholder="Tìm kiếm tên siêu thị..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-black border border-white/10 pl-10 pr-4 py-3 text-[10px] uppercase tracking-widest text-white focus:border-[var(--primary)] outline-none" />
           </div>
-
+          
           <div className="flex flex-wrap gap-2">
             <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest w-full mb-1 flex items-center gap-2"><Filter size={10} /> Chọn ngày soạn:</span>
             {availableDates.map(date => (
@@ -397,8 +436,8 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-xs font-mono text-gray-500 hidden md:block">{colSessions.length}</span>
-                      <div className="md:hidden">{isExpanded ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}</div>
+                       <span className="text-xs font-mono text-gray-500 hidden md:block">{colSessions.length}</span>
+                       <div className="md:hidden">{isExpanded ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}</div>
                     </div>
                   </button>
                   <div className={cn("flex-1 md:block transition-all overflow-hidden", isExpanded ? "block h-auto" : "hidden h-0 md:h-auto")}>
@@ -420,11 +459,11 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
 
       <AnimatePresence>
         {activeSession && (
-          <PickingModal
-            session={activeSession}
+          <PickingModal 
+            session={activeSession} 
             filteredSessions={filteredSessions}
-            onClose={() => setActiveSession(null)}
-            onUpdate={() => { }}
+            onClose={() => setActiveSession(null)} 
+            onUpdateLocal={updateItemLocally} 
             onSwitchSession={setActiveSession}
           />
         )}
