@@ -6,7 +6,7 @@ import {
   Clock, Play, CheckCircle, MoreVertical, Package, ArrowRight, Store, 
   Check, Save, Weight, Box, Search, Calendar, X, ChevronRight,
   ChevronLeft, ArrowLeft, ChevronDown, Scale, Layers, ChevronUp,
-  LayoutDashboard, ClipboardList, Filter
+  LayoutDashboard, ClipboardList, Filter, Boxes
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { updateSessionStatus, updatePickingItem } from "../actions/picking";
@@ -153,18 +153,28 @@ const SummaryTable = ({ items }: { items: any[] }) => {
         map.set(key, { 
           name: item.productName, 
           sku: item.sku, 
-          specs: item.specs,
+          specs: parseFloat(item.specs) || 1,
           totalQty: 0,
-          totalPackages: 0,
           totalWeight: 0
         });
       }
       const entry = map.get(key);
       entry.totalQty += item.quantity;
-      entry.totalPackages += parseFloat(item.packages) || 0;
       entry.totalWeight += parseFloat(item.totalWeightKg) || 0;
     });
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+    return Array.from(map.values()).map(entry => {
+      const fullPackages = Math.floor(entry.totalQty / entry.specs);
+      const remainderQty = entry.totalQty % entry.specs;
+      const totalPackagesDecimal = (entry.totalQty / entry.specs).toFixed(2);
+
+      return {
+        ...entry,
+        fullPackages,
+        remainderQty,
+        totalPackagesDecimal
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name));
   }, [items]);
 
   return (
@@ -173,22 +183,39 @@ const SummaryTable = ({ items }: { items: any[] }) => {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-white/5 border-b border-white/10">
-              <th className="p-4 text-[10px] font-black uppercase tracking-widest text-gray-500">Tên sản phẩm</th>
-              <th className="p-4 text-[10px] font-black uppercase tracking-widest text-gray-500">SKU</th>
-              <th className="p-4 text-[10px] font-black uppercase tracking-widest text-gray-500">Quy cách</th>
+              <th className="p-4 text-[10px] font-black uppercase tracking-widest text-gray-500">Sản phẩm</th>
               <th className="p-4 text-center text-[10px] font-black uppercase tracking-widest text-gray-500">Tổng Số Lượng</th>
-              <th className="p-4 text-center text-[10px] font-black uppercase tracking-widest text-gray-500 text-[var(--primary)]">Tổng Kiện</th>
+              <th className="p-4 text-center text-[10px] font-black uppercase tracking-widest text-gray-500">Tổng kiện (Hệ số)</th>
+              <th className="p-4 text-center text-[10px] font-black uppercase tracking-widest text-white bg-white/5">Kiện chẵn (Thùng)</th>
+              <th className="p-4 text-center text-[10px] font-black uppercase tracking-widest text-[var(--primary)] bg-[var(--primary)]/5">Lẻ (Cái)</th>
               <th className="p-4 text-right text-[10px] font-black uppercase tracking-widest text-gray-500 text-[var(--accent)]">Tổng Trọng Lượng</th>
             </tr>
           </thead>
           <tbody>
             {consolidated.map((row, idx) => (
               <tr key={idx} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                <td className="p-4 text-sm font-black uppercase text-white tracking-tight">{row.name}</td>
-                <td className="p-4 text-xs font-mono text-gray-500">{row.sku || "-"}</td>
-                <td className="p-4 text-xs text-gray-600">{row.specs || "-"}</td>
+                <td className="p-4">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-black uppercase text-white tracking-tight">{row.name}</span>
+                    <span className="inline-flex w-fit items-center gap-1 px-2 py-0.5 bg-white/5 border border-white/10 rounded-sm text-[9px] font-bold text-gray-400">
+                      <Box size={10} /> QUY CÁCH: {row.specs}
+                    </span>
+                  </div>
+                </td>
                 <td className="p-4 text-center text-lg font-black text-white">{row.totalQty}</td>
-                <td className="p-4 text-center text-lg font-black text-[var(--primary)]">{row.totalPackages.toFixed(2)}</td>
+                <td className="p-4 text-center text-xs font-mono text-gray-500 italic">{row.totalPackagesDecimal}</td>
+                <td className="p-4 text-center bg-white/[0.02]">
+                  <div className="flex flex-col items-center">
+                    <span className="text-2xl font-black text-white">{row.fullPackages}</span>
+                    <span className="text-[8px] font-bold text-gray-600 uppercase">THÙNG</span>
+                  </div>
+                </td>
+                <td className="p-4 text-center bg-[var(--primary)]/5">
+                  <div className="flex flex-col items-center">
+                    <span className="text-2xl font-black text-[var(--primary)]">{row.remainderQty}</span>
+                    <span className="text-[8px] font-bold text-[var(--primary)]/50 uppercase">CÁI LẺ</span>
+                  </div>
+                </td>
                 <td className="p-4 text-right text-lg font-black text-[var(--accent)]">{row.totalWeight.toFixed(2)} <span className="text-[10px] text-gray-600">KG</span></td>
               </tr>
             ))}
@@ -262,14 +289,6 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
   // Sync state with server props (VERY IMPORTANT for Next.js Revalidation)
   useEffect(() => {
     setSessions(initialSessions);
-    // Auto-select latest week if currently "all" and data just arrived
-    if (selectedWeek === "all" && initialSessions.length > 0) {
-      const keys = Array.from(new Set(initialSessions.map(s => s.weekKey)));
-      if (keys.length > 0) {
-        // Find the latest week or stay at all
-        // For now we stay at "all" but allow user to select
-      }
-    }
   }, [initialSessions]);
 
   const weekKeys = useMemo(() => {
