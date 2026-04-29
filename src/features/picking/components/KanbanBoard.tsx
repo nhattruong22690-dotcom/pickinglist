@@ -371,9 +371,30 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
   };
 
   const columns = [
-    { id: "PENDING", title: "Chưa soạn", icon: Clock, color: "text-gray-400", border: "border-gray-500/20" },
-    { id: "PROCESSING", title: "Đang soạn", icon: Play, color: "text-[var(--primary)]", border: "border-[var(--primary)]/20" },
-    { id: "COMPLETED", title: "Hoàn tất", icon: CheckCircle, color: "text-green-500", border: "border-green-500/20" },
+    { 
+      id: "PENDING", 
+      title: "Chưa soạn", 
+      icon: Clock, 
+      color: "text-gray-400", 
+      border: "border-gray-500/20",
+      glowColor: "rgba(156, 163, 175, 0.8)"
+    },
+    { 
+      id: "PROCESSING", 
+      title: "Đang soạn", 
+      icon: Play, 
+      color: "text-[var(--primary)]", 
+      border: "border-[var(--primary)]/20",
+      glowColor: "rgba(0, 242, 255, 0.8)"
+    },
+    { 
+      id: "COMPLETED", 
+      title: "Hoàn tất", 
+      icon: CheckCircle, 
+      color: "text-green-500", 
+      border: "border-green-500/20",
+      glowColor: "rgba(34, 197, 94, 0.8)"
+    },
   ];
 
   return (
@@ -432,11 +453,23 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
                       <col.icon size={18} className={col.color} />
                       <div className="flex flex-col items-start">
                         <h3 className="text-[10px] font-black uppercase text-white tracking-[0.2em]">{col.title}</h3>
-                        {!isExpanded && <span className="text-[9px] text-gray-600 md:hidden">{colSessions.length} đơn hàng</span>}
+                        {!isExpanded && (
+                          <span 
+                            className={cn("text-xs font-black md:hidden", col.color)}
+                            style={{ textShadow: `0 0 10px ${col.glowColor}` }}
+                          >
+                            {colSessions.length} đơn hàng
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                       <span className="text-xs font-mono text-gray-500 hidden md:block">{colSessions.length}</span>
+                       <span 
+                        className={cn("text-lg font-black hidden md:block", col.color)}
+                        style={{ textShadow: `0 0 12px ${col.glowColor}` }}
+                       >
+                         {colSessions.length}
+                       </span>
                        <div className="md:hidden">{isExpanded ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}</div>
                     </div>
                   </button>
