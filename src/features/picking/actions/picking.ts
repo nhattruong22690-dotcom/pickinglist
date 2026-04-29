@@ -5,20 +5,25 @@ import { revalidatePath } from "next/cache";
 import { v4 as uuidv4 } from "uuid";
 
 async function getSheetData(range: string) {
-  const sheets = await getGoogleSheetsClient();
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range,
-  });
-  return response.data.values || [];
+  try {
+    const sheets = await getGoogleSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range,
+    });
+    return response.data.values || [];
+  } catch (e) {
+    console.error("Error fetching sheet data:", e);
+    return [];
+  }
 }
 
 export async function getProductMasterData() {
   const rows = await getSheetData("Products!A:D");
   if (rows.length <= 1) return [];
   return rows.slice(1).map(row => ({
-    sku: row[0],
-    name: row[1],
+    sku: (row[0] || "").toString().trim(),
+    name: (row[1] || "").toString().trim(),
     specs: row[2], 
     weight: row[3] 
   }));
@@ -29,8 +34,8 @@ export async function getSupermarketMasterData() {
     const rows = await getSheetData("Supermarkets!A:B");
     if (rows.length <= 1) return [];
     return rows.slice(1).map(row => ({
-      code: row[0],
-      name: row[1]
+      code: (row[0] || "").toString().trim(),
+      name: (row[1] || "").toString().trim()
     }));
   } catch (e) {
     return [];
@@ -44,14 +49,13 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
     const masterSupermarkets = await getSupermarketMasterData();
     const createdAt = new Date().toISOString();
     
-    // Cập nhật Tiêu đề Items (14 cột - thêm PickingDate)
+    // Cập nhật Tiêu đề
     const itemHeaders = ["ID", "SessionID", "SupermarketCode", "Supermarket", "ProductName", "Quantity", "SKU", "Specs", "UnitWeight(g)", "ActualQty", "IsPicked", "TotalWeight(kg)", "Packages", "PickingDate"];
+    const sessionHeaders = ["ID", "WeekKey", "Supermarket", "Status", "CreatedAt", "PickingDate"];
+
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID, range: "Items!A1:N1", valueInputOption: "RAW", requestBody: { values: [itemHeaders] },
     });
-
-    // Cập nhật Tiêu đề Sessions (6 cột - thêm PickingDate)
-    const sessionHeaders = ["ID", "WeekKey", "Supermarket", "Status", "CreatedAt", "PickingDate"];
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID, range: "Sessions!A1:F1", valueInputOption: "RAW", requestBody: { values: [sessionHeaders] },
     });
@@ -60,11 +64,10 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
     const itemRows: any[] = [];
 
     const normalize = (text: string) => 
-      text?.replace(/\r?\n|\r/g, " ").replace(/\s+/g, " ").trim().toLowerCase() || "";
+      text?.toString().replace(/\r?\n|\r/g, " ").replace(/\s+/g, " ").trim().toLowerCase() || "";
 
     for (const sessionData of sessions) {
       const sessionId = uuidv4();
-      
       const normalizedExcelSupermarket = normalize(sessionData.supermarket);
       const matchedSM = masterSupermarkets.find(s => normalize(s.name) === normalizedExcelSupermarket);
       const finalSupermarketCode = matchedSM ? matchedSM.code : "";
@@ -75,7 +78,6 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
       sessionData.items.forEach(item => {
         const normalizedExcelName = normalize(item.productName);
         const masterProd = products.find(p => normalize(p.name) === normalizedExcelName);
-        
         const finalProductName = masterProd ? masterProd.name : item.productName;
         
         let calculatedWeightKg = 0;
@@ -92,7 +94,7 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
 
         itemRows.push([
           uuidv4(), sessionId, finalSupermarketCode, finalSupermarketName, finalProductName, item.quantity,
-          masterProd?.sku || "", masterProd?.specs || "", masterProd?.weight || "", "", "FALSE", calculatedWeightKg, packages, pickingDate
+          (masterProd?.sku || ""), (masterProd?.specs || ""), (masterProd?.weight || ""), "", "FALSE", calculatedWeightKg, packages, pickingDate
         ]);
       });
     }
@@ -104,7 +106,7 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
       spreadsheetId: SHEET_ID, range: "Items!A:N", valueInputOption: "RAW", requestBody: { values: itemRows },
     });
 
-    revalidatePath("/");
+    revalidatePath("/picking");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -115,7 +117,7 @@ export async function updatePickingItem(itemId: string, sessionId: string, actua
   try {
     const sheets = await getGoogleSheetsClient();
     const itemRows = await getSheetData("Items!A:A");
-    const itemRowIndex = itemRows.findIndex(row => row[0] === itemId);
+    const itemRowIndex = itemRows.findIndex(row => (row[0] || "").toString().trim() === itemId.trim());
     if (itemRowIndex === -1) throw new Error("Item not found");
 
     await sheets.spreadsheets.values.update({
@@ -126,14 +128,14 @@ export async function updatePickingItem(itemId: string, sessionId: string, actua
     });
 
     const sessionRows = await getSheetData("Sessions!A:D");
-    const sessionRowIndex = sessionRows.findIndex(row => row[0] === sessionId);
-    if (sessionRowIndex !== -1 && sessionRows[sessionRowIndex][3] === "PENDING") {
+    const sessionRowIndex = sessionRows.findIndex(row => (row[0] || "").toString().trim() === sessionId.trim());
+    if (sessionRowIndex !== -1 && (sessionRows[sessionRowIndex][3] || "").toString().trim() === "PENDING") {
       await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID, range: `Sessions!D${sessionRowIndex + 1}`, valueInputOption: "RAW", requestBody: { values: [["PROCESSING"]] },
       });
     }
 
-    revalidatePath("/");
+    revalidatePath("/picking");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -144,14 +146,14 @@ export async function updateSessionStatus(id: string, status: string) {
   try {
     const sheets = await getGoogleSheetsClient();
     const rows = await getSheetData("Sessions!A:A");
-    const rowIndex = rows.findIndex(row => row[0] === id);
+    const rowIndex = rows.findIndex(row => (row[0] || "").toString().trim() === id.trim());
     if (rowIndex === -1) throw new Error("Session not found");
     
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID, range: `Sessions!D${rowIndex + 1}`, valueInputOption: "RAW", requestBody: { values: [[status]] },
     });
 
-    revalidatePath("/");
+    revalidatePath("/picking");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -162,18 +164,43 @@ export async function getSessions() {
   try {
     const sessionRows = await getSheetData("Sessions!A:F");
     const itemRows = await getSheetData("Items!A:N");
-    const sessionsData = sessionRows[0]?.[0] === "ID" ? sessionRows.slice(1) : sessionRows;
-    const itemsData = itemRows[0]?.[0] === "ID" ? itemRows.slice(1) : itemRows;
+    
+    // Bỏ qua header nếu ô đầu tiên là "ID" (không phân biệt hoa thường)
+    const sessionsData = (sessionRows.length > 0 && (sessionRows[0][0] || "").toString().toUpperCase() === "ID") 
+      ? sessionRows.slice(1) : sessionRows;
+    const itemsData = (itemRows.length > 0 && (itemRows[0][0] || "").toString().toUpperCase() === "ID") 
+      ? itemRows.slice(1) : itemRows;
 
-    return sessionsData.map(row => ({
-      id: row[0], weekKey: row[1], supermarket: row[2], status: row[3], createdAt: row[4], pickingDate: row[5],
-      items: itemsData.filter(item => item[1] === row[0]).map(item => ({
-        id: item[0], supermarketCode: item[2], supermarket: item[3], productName: item[4], quantity: parseInt(item[5]),
-        sku: item[6], specs: item[7], weight: item[8], actualQty: item[9], isPicked: item[10] === "TRUE",
-        totalWeightKg: item[11], packages: item[12], pickingDate: item[13]
-      }))
-    }));
+    return sessionsData.map(row => {
+      const sessionId = (row[0] || "").toString().trim();
+      return {
+        id: sessionId, 
+        weekKey: row[1], 
+        supermarket: (row[2] || "N/A"), 
+        status: (row[3] || "PENDING"), 
+        createdAt: row[4], 
+        pickingDate: row[5] || "",
+        items: itemsData
+          .filter(item => (item[1] || "").toString().trim() === sessionId)
+          .map(item => ({
+            id: (item[0] || "").toString().trim(), 
+            supermarketCode: item[2], 
+            supermarket: item[3], 
+            productName: (item[4] || "Unknown"), 
+            quantity: parseInt(item[5] || "0"),
+            sku: item[6], 
+            specs: item[7], 
+            weight: item[8], 
+            actualQty: item[9], 
+            isPicked: (item[10] || "").toString().toUpperCase() === "TRUE",
+            totalWeightKg: item[11], 
+            packages: item[12], 
+            pickingDate: item[13]
+          }))
+      };
+    });
   } catch (error) {
+    console.error("Error in getSessions:", error);
     return [];
   }
 }
