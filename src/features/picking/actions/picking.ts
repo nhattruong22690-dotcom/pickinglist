@@ -49,6 +49,9 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
     const masterSupermarkets = await getSupermarketMasterData();
     const createdAt = new Date().toISOString();
     
+    // CHUẨN HÓA WEEK KEY SANG CHỮ HOA
+    const finalWeekKey = weekKey.toString().toUpperCase().trim();
+
     const itemHeaders = ["ID", "SessionID", "SupermarketCode", "Supermarket", "ProductName", "Quantity", "SKU", "Specs", "UnitWeight(g)", "ActualQty", "IsPicked", "TotalWeight(kg)", "Packages", "PickingDate"];
     const sessionHeaders = ["ID", "WeekKey", "Supermarket", "Status", "CreatedAt", "PickingDate"];
 
@@ -72,7 +75,7 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
       const finalSupermarketCode = matchedSM ? matchedSM.code : "";
       const finalSupermarketName = matchedSM ? matchedSM.name : sessionData.supermarket;
 
-      sessionRows.push([sessionId, weekKey, finalSupermarketName, "PENDING", createdAt, pickingDate]);
+      sessionRows.push([sessionId, finalWeekKey, finalSupermarketName, "PENDING", createdAt, pickingDate]);
 
       sessionData.items.forEach(item => {
         const normalizedExcelName = normalize(item.productName);
@@ -195,7 +198,7 @@ export async function getSessions() {
       const sessionId = (row[0] || "").toString().trim();
       return {
         id: sessionId, 
-        weekKey: row[1], 
+        weekKey: (row[1] || "").toString().toUpperCase().trim(), // Đảm bảo WeekKey hiển thị chữ hoa
         supermarket: (row[2] || "N/A"), 
         status: (row[3] || "PENDING"), 
         createdAt: row[4], 
