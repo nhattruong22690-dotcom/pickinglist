@@ -11,13 +11,14 @@ import {
   X,
   ChevronRight,
   Database,
-  BarChart3
+  BarChart3,
+  FileUp
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface SidebarProps {
-  activeTab: "picking" | "master" | "dashboard" | "settings";
+  activeTab: "picking" | "master" | "dashboard" | "settings" | "import";
 }
 
 export const Sidebar = ({ activeTab }: SidebarProps) => {
@@ -25,6 +26,7 @@ export const Sidebar = ({ activeTab }: SidebarProps) => {
 
   const menuItems = [
     { id: "picking", label: "Soạn hàng", icon: ClipboardList, href: "/picking" },
+    { id: "import", label: "Nhập Excel", icon: FileUp, href: "/import" },
     { id: "master", label: "Dữ liệu gốc", icon: Database, href: "/master-data" },
     { id: "dashboard", label: "Thống kê", icon: BarChart3, href: "#" },
     { id: "settings", label: "Cài đặt", icon: Settings, href: "#" },
@@ -88,10 +90,10 @@ export const Sidebar = ({ activeTab }: SidebarProps) => {
 
   return (
     <>
-      {/* Mobile Menu Button - Only visible on small screens */}
+      {/* Mobile Menu Button - Moved to Top Left */}
       <button 
         onClick={() => setIsOpen(true)}
-        className="lg:hidden fixed top-6 right-6 z-[60] w-12 h-12 bg-white/5 backdrop-blur-md border border-white/10 rounded-sm flex items-center justify-center text-white active:scale-95 transition-all shadow-2xl"
+        className="lg:hidden fixed top-6 left-6 z-[60] w-12 h-12 bg-black/40 backdrop-blur-xl border border-white/10 rounded-sm flex items-center justify-center text-white active:scale-95 transition-all shadow-2xl"
       >
         <Menu size={24} />
       </button>
