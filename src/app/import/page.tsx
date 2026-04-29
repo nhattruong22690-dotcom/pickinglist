@@ -10,8 +10,8 @@ export default function ImportPage() {
       <main className="flex-1 relative overflow-y-auto p-4 lg:p-8">
         <div className="hud-line absolute top-0 left-0 w-full opacity-20" />
         
-        <header className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-12 gap-4">
-          <div>
+        <header className="flex flex-col lg:flex-row justify-between items-center lg:items-end mb-12 gap-4 text-center lg:text-left">
+          <div className="flex flex-col items-center lg:items-start w-full">
             <h1 className="text-4xl lg:text-6xl font-black text-white tracking-tighter uppercase">
               Import_Data
               <span className="text-[var(--primary)]">.</span>
