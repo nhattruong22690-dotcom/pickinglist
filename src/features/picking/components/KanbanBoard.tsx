@@ -273,6 +273,7 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
                   if (result && result.text) handleBarcodeScanned(result.text);
                 });
               } else {
+                setScannerMode("barcode");
                 setIsScannerOpen(true);
               }
             }}
