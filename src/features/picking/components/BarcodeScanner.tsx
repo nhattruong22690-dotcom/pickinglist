@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
+import { Html5Qrcode, Html5QrcodeScannerState, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { X, Camera, Zap, RefreshCw, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
@@ -30,17 +30,39 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
       if (!isMounted) return;
 
       try {
-        const html5QrCode = new Html5Qrcode(containerId);
+        const html5QrCode = new Html5Qrcode(containerId, {
+          // Chỉ tập trung vào các mã vạch phổ biến trong kho để tăng tốc độ xử lý
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.ITF
+          ],
+          verbose: false
+        });
         scannerRef.current = html5QrCode;
 
+        // Tối ưu hóa cấu hình để quét nhanh và chính xác nhất
         const config = {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
+          fps: 20, // Tăng tốc độ khung hình
+          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const size = Math.floor(minEdge * 0.7);
+            return { width: size, height: size * 0.6 }; // Khung hình chữ nhật giúp quét barcode tốt hơn
+          },
           aspectRatio: 1.0,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true // Sử dụng API phần cứng của thiết bị nếu có
+          }
         };
 
         await html5QrCode.start(
-          { facingMode: "environment" },
+          { 
+            facingMode: "environment"
+          },
           config,
           (decodedText) => {
             if (isMounted) onScanSuccess(decodedText);
