@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
+import { Html5Qrcode, Html5QrcodeScannerState, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { X, Zap, RefreshCw, AlertTriangle, Keyboard } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
@@ -54,18 +54,25 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
     if (!isMountedRef.current) return;
 
     try {
-      const html5QrCode = new Html5Qrcode(containerId, { verbose: false });
+      const html5QrCode = new Html5Qrcode(containerId, { 
+        verbose: false,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.QR_CODE
+        ]
+      });
       scannerRef.current = html5QrCode;
 
-      // Cấu hình tối giản, tương thích tối đa iOS Safari
+      // Bỏ qrbox để sử dụng toàn bộ khung hình, giúp camera dễ lấy nét các mã vạch dài
       await html5QrCode.start(
         { facingMode: "environment" },
         {
           fps: 15,
-          qrbox: (w: number, h: number) => ({
-            width: Math.floor(w * 0.85),
-            height: Math.floor(h * 0.35),
-          }),
         },
         (decodedText) => {
           if (isMountedRef.current) {

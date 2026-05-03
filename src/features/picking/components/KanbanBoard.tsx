@@ -171,15 +171,17 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
                 if (matched) {
                   if (matched.isPicked || (parseInt(matched.actualQty) >= matched.quantity)) {
                     setScanWarning(`Sản phẩm "${matched.productName}" đã được soạn đủ!`);
-                    // Play warning sound
                     try { new Audio("https://assets.mixkit.co/active_storage/sfx/2859/2859-preview.mp3").play(); } catch(e) {}
                     return;
                   }
                   setScannedItem(matched);
                   setIsScannerOpen(false);
-                  // Play success sound
                   try { new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3").play(); } catch(e) {}
                   if (navigator.vibrate) navigator.vibrate(200);
+                } else {
+                  setScanWarning(`Mã "${code}" không có trong đơn hàng này!`);
+                  try { new Audio("https://assets.mixkit.co/active_storage/sfx/2859/2859-preview.mp3").play(); } catch(e) {}
+                  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
                 }
               }} 
               onClose={() => setIsScannerOpen(false)} 
