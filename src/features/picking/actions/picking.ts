@@ -19,13 +19,14 @@ async function getSheetData(range: string) {
 }
 
 export async function getProductMasterData() {
-  const rows = await getSheetData("Products!A:D");
+  const rows = await getSheetData("Products!A:F");
   if (rows.length <= 1) return [];
   return rows.slice(1).map(row => ({
     sku: (row[0] || "").toString().trim(),
     name: (row[1] || "").toString().trim(),
     specs: row[2], 
-    weight: row[3] 
+    weight: row[3],
+    barcode: (row[5] || "").toString().trim() // Column F
   }));
 }
 
@@ -52,7 +53,7 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
     // CHUẨN HÓA WEEK KEY SANG CHỮ HOA
     const finalWeekKey = weekKey.toString().toUpperCase().trim();
 
-    const itemHeaders = ["ID", "SessionID", "SupermarketCode", "Supermarket", "ProductName", "Quantity", "SKU", "Specs", "UnitWeight(g)", "ActualQty", "IsPicked", "TotalWeight(kg)", "Packages", "PickingDate"];
+    const itemHeaders = ["ID", "SessionID", "SupermarketCode", "Supermarket", "ProductName", "Quantity", "SKU", "Specs", "UnitWeight(g)", "ActualQty", "IsPicked", "TotalWeight(kg)", "Packages", "PickingDate", "Barcode"];
     const sessionHeaders = ["ID", "WeekKey", "Supermarket", "Status", "CreatedAt", "PickingDate"];
 
     await sheets.spreadsheets.values.update({
@@ -96,7 +97,7 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
 
         itemRows.push([
           uuidv4(), sessionId, finalSupermarketCode, finalSupermarketName, finalProductName, item.quantity,
-          (masterProd?.sku || ""), (masterProd?.specs || ""), (masterProd?.weight || ""), "", "FALSE", calculatedWeightKg, packages, pickingDate
+          (masterProd?.sku || ""), (masterProd?.specs || ""), (masterProd?.weight || ""), "", "FALSE", calculatedWeightKg, packages, pickingDate, (masterProd?.barcode || "")
         ]);
       });
     }
@@ -166,6 +167,31 @@ export async function updatePickingItem(itemId: string, sessionId: string, actua
   }
 }
 
+export async function updateProductBarcode(productName: string, newBarcode: string) {
+  try {
+    const sheets = await getGoogleSheetsClient();
+    const rows = await getSheetData("Products!A:B");
+    const rowIndex = rows.findIndex(row => (row[1] || "").toString().trim() === productName.trim());
+    
+    if (rowIndex === -1) {
+      throw new Error("Không tìm thấy sản phẩm trong danh sách.");
+    }
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `Products!F${rowIndex + 1}`, // Cột F
+      valueInputOption: "RAW",
+      requestBody: { values: [[newBarcode]] },
+    });
+
+    revalidatePath("/products");
+    revalidatePath("/picking");
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
 export async function updateSessionStatus(id: string, status: string) {
   try {
     const sheets = await getGoogleSheetsClient();
@@ -211,14 +237,15 @@ export async function getSessions() {
             supermarket: item[3], 
             productName: (item[4] || "Unknown"), 
             quantity: parseInt(item[5] || "0"),
-            sku: item[6], 
+            sku: (item[6] || ""), 
             specs: item[7], 
             weight: item[8], 
             actualQty: item[9], 
             isPicked: (item[10] || "").toString().toUpperCase() === "TRUE",
             totalWeightKg: item[11], 
             packages: item[12], 
-            pickingDate: item[13]
+            pickingDate: item[13],
+            barcode: (item[14] || "") // Add barcode field to items
           }))
       };
     });

@@ -6,77 +6,62 @@ import {
   Clock, Play, CheckCircle, MoreVertical, Package, ArrowRight, Store, 
   Check, Save, Weight, Box, Search, Calendar, X, ChevronRight,
   ChevronLeft, ArrowLeft, ChevronDown, Scale, Layers, ChevronUp,
-  LayoutDashboard, ClipboardList, Filter, Boxes
+  LayoutDashboard, ClipboardList, Filter, Boxes, ScanBarcode
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { updateSessionStatus, updatePickingItem } from "../actions/picking";
+import { BarcodeScanner } from "./BarcodeScanner";
 
 // --- Sub-component for Picking Item Row ---
 
 const PickingItemRow = ({ item, sessionId, onUpdateLocal }: { item: any, sessionId: string, onUpdateLocal: (itemId: string, qty: string, picked: boolean) => void }) => {
   const [actualQty, setActualQty] = useState(item.actualQty || "");
-  const [isPicked, setIsPicked] = useState(item.isPicked);
+  const [isCompleted, setIsCompleted] = useState(item.isPicked);
+  const [isChecked, setIsChecked] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setActualQty(item.actualQty || "");
-    setIsPicked(item.isPicked);
+    setIsCompleted(item.isPicked);
   }, [item]);
 
   const handleManualSave = async () => {
     if (isSaving) return;
     setIsSaving(true);
+    const completed = parseInt(actualQty) >= item.quantity;
+    setIsCompleted(completed);
     // Optimistic Update
-    onUpdateLocal(item.id, actualQty, isPicked);
-    const result = await updatePickingItem(item.id, sessionId, actualQty, isPicked);
+    onUpdateLocal(item.id, actualQty, completed);
+    const result = await updatePickingItem(item.id, sessionId, actualQty, completed);
     setIsSaving(false);
   };
 
-  const handleTogglePicked = async () => {
-    if (isSaving) return;
-    const nextPickedState = !isPicked;
-    let nextQty = actualQty;
-    if (nextPickedState) {
-      if (!actualQty || actualQty === "0") {
-        nextQty = item.quantity.toString();
-        setActualQty(nextQty);
-      }
-    } else {
-      nextQty = "0";
-      setActualQty("0");
-    }
-    setIsPicked(nextPickedState);
-    
-    // Optimistic Update - Update local state immediately
-    onUpdateLocal(item.id, nextQty, nextPickedState);
-    
-    setIsSaving(true);
-    await updatePickingItem(item.id, sessionId, nextQty, nextPickedState);
-    setIsSaving(false);
+  const handleToggleChecked = () => {
+    setIsChecked(!isChecked);
   };
 
   return (
     <motion.div 
       initial={false}
       animate={{ 
-        backgroundColor: isPicked ? "rgba(34, 197, 94, 0.15)" : "rgba(255, 255, 255, 0)",
-        borderColor: isPicked ? "rgba(34, 197, 94, 0.3)" : "rgba(255, 255, 255, 0.05)"
+        backgroundColor: isCompleted ? "rgba(34, 197, 94, 0.15)" : "rgba(255, 255, 255, 0)",
+        borderColor: isCompleted ? "rgba(34, 197, 94, 0.3)" : "rgba(255, 255, 255, 0.05)"
       }}
       className={cn(
         "grid grid-cols-12 gap-3 py-6 px-4 border-b transition-all relative overflow-hidden",
-        isPicked ? "border-green-500/30 shadow-[inset_0_0_20px_rgba(34,197,94,0.05)]" : "border-white/5"
+        isCompleted ? "border-green-500/30 shadow-[inset_0_0_20px_rgba(34,197,94,0.05)]" : "border-white/5"
       )}
     >
-      {isPicked && <motion.div initial={{ x: -100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="absolute left-0 top-0 bottom-0 w-1 bg-green-500" />}
+      {isCompleted && <motion.div initial={{ x: -100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="absolute left-0 top-0 bottom-0 w-1 bg-green-500" />}
       <div className="col-span-2 flex items-center justify-center">
-        <motion.button whileTap={{ scale: 0.8 }} onClick={handleTogglePicked} disabled={isSaving} className={cn("w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all shadow-xl", isPicked ? "bg-green-500 border-green-500 text-black scale-110" : "border-gray-700 hover:border-[var(--primary)] text-transparent")}>
+        <motion.button whileTap={{ scale: 0.8 }} onClick={handleToggleChecked} className={cn("w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all shadow-xl", isChecked ? "bg-green-500 border-green-500 text-black scale-110" : "border-gray-700 text-transparent")}>
           <AnimatePresence mode="wait">
-            {isPicked && <motion.div key="checked" initial={{ scale: 0, rotate: -45 }} animate={{ scale: 1, rotate: 0 }} exit={{ scale: 0 }}><Check size={22} strokeWidth={4} /></motion.div>}
+            {isChecked && <motion.div key="checked" initial={{ scale: 0, rotate: -45 }} animate={{ scale: 1, rotate: 0 }} exit={{ scale: 0 }}><Check size={22} strokeWidth={4} /></motion.div>}
           </AnimatePresence>
         </motion.button>
       </div>
       <div className="col-span-6 flex flex-col justify-center">
-        <div className={cn("text-sm font-black uppercase tracking-tight mb-2 transition-all", isPicked ? "text-gray-400 line-through opacity-70" : "text-white")}>{item.productName}</div>
+        <div className={cn("text-sm font-black uppercase tracking-tight mb-2 transition-all", isCompleted ? "text-green-500 opacity-90" : "text-white")}>{item.productName}</div>
         <div className="flex flex-wrap gap-3">
           {item.sku && <span className="text-[9px] bg-white/5 px-2 py-0.5 border border-white/10 text-gray-500 font-mono rounded-sm">{item.sku}</span>}
           <div className="flex items-center gap-3">
@@ -87,9 +72,9 @@ const PickingItemRow = ({ item, sessionId, onUpdateLocal }: { item: any, session
         </div>
       </div>
       <div className="col-span-4 flex flex-col items-end justify-center gap-2">
-        <div className={cn("text-sm font-black uppercase transition-all", isPicked ? "text-green-500" : "text-white")}>{isPicked ? "ĐÃ XONG: " : "CẦN: "} {item.quantity}</div>
+        <div className={cn("text-sm font-black uppercase transition-all", isCompleted ? "text-green-500" : "text-white")}>{isCompleted ? "ĐÃ XONG: " : "CẦN: "} {item.quantity}</div>
         <div className="flex items-center gap-1.5 mt-1">
-          <input type="number" value={actualQty} onChange={(e) => setActualQty(e.target.value)} placeholder="0" className={cn("w-20 bg-white/5 border border-white/10 text-sm font-black text-center py-2 outline-none rounded-sm transition-all focus:border-[var(--accent)]", isPicked ? "text-green-500" : "text-[var(--accent)]")} />
+          <input type="number" value={actualQty} onChange={(e) => setActualQty(e.target.value)} placeholder="0" className={cn("w-20 bg-white/5 border border-white/10 text-sm font-black text-center py-2 outline-none rounded-sm transition-all focus:border-[var(--accent)]", isCompleted ? "text-green-500" : "text-[var(--accent)]")} />
           <button onClick={handleManualSave} disabled={isSaving} className={cn("p-2 rounded-sm transition-all", isSaving ? "opacity-50" : "hover:bg-[var(--accent)] hover:text-black bg-white/5 text-gray-500")}><Save size={18} className={isSaving ? "animate-spin" : ""} /></button>
         </div>
       </div>
@@ -106,6 +91,11 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
   const totalCount = session.items.length;
   const totalWeightKg = session.items.reduce((acc: number, item: any) => acc + (parseFloat(item.totalWeightKg) || 0), 0).toFixed(2);
   const totalPackages = session.items.reduce((acc: number, item: any) => acc + (parseFloat(item.packages) || 0), 0).toFixed(2);
+
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannedItem, setScannedItem] = useState<any | null>(null);
+  const [scanQty, setScanQty] = useState("");
+  const [scanWarning, setScanWarning] = useState<string | null>(null);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-4 bg-black/95 backdrop-blur-md">
@@ -127,6 +117,33 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
            <div className="flex flex-col"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Tiến độ nhặt hàng:</span><div className="text-xl font-black text-white">{pickedCount}/{totalCount} <span className="text-[10px] text-gray-600 font-normal ml-2 tracking-widest">MÓN XONG</span></div></div>
            <div className="flex flex-col items-end"><div className="flex items-center gap-6"><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-widest flex items-center gap-1"><Layers size={10} /> Tổng Số Kiện:</span><div className="text-lg font-black text-white">{totalPackages}</div></div><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--accent)] uppercase tracking-widest flex items-center gap-1"><Scale size={10} /> Tổng Trọng Lượng:</span><div className="text-lg font-black text-white">{totalWeightKg} <span className="text-[10px] text-gray-600">KG</span></div></div></div></div>
         </div>
+
+        {/* --- LARGE SCAN BUTTON --- */}
+        <div className="p-4 bg-black border-b border-white/10 flex justify-center">
+          <motion.button 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setIsScannerOpen(true)}
+            className="w-full max-w-sm py-8 bg-gradient-to-r from-[var(--primary)]/20 to-[var(--primary)]/5 border-2 border-[var(--primary)] flex flex-col items-center justify-center gap-3 relative overflow-hidden group transition-all hover:from-[var(--primary)]/30 hover:to-[var(--primary)]/10"
+          >
+            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[var(--primary)] to-transparent opacity-50" />
+            <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[var(--primary)] to-transparent opacity-50" />
+            <div className="relative z-10 flex items-center gap-4">
+              <div className="p-3 bg-[var(--primary)] text-black rounded-sm shadow-[0_0_20px_rgba(var(--primary-rgb),0.5)]">
+                <ScanBarcode size={24} className="group-hover:scale-110 transition-transform duration-500" />
+              </div>
+              <div className="flex flex-col items-start">
+                <span className="text-lg font-black text-white uppercase tracking-tighter">QUÉT MÃ VẠCH</span>
+                <span className="text-[9px] font-bold text-[var(--primary)]/70 uppercase tracking-[0.3em]">Bấm để bắt đầu nhặt hàng</span>
+              </div>
+            </div>
+            
+            {/* Background Decoration */}
+            <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:opacity-20 transition-opacity">
+              <ScanBarcode size={100} />
+            </div>
+          </motion.button>
+        </div>
         <div className="flex-1 overflow-y-auto max-h-[60vh] bg-black">
           <div className="space-y-0">
               <div className="grid grid-cols-12 gap-2 px-4 py-3 text-[10px] font-black text-gray-600 uppercase tracking-widest border-b border-white/10 sticky top-0 bg-black z-10">
@@ -141,6 +158,120 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
           <button onClick={onClose} className="text-[10px] font-black text-gray-500 hover:text-white uppercase tracking-widest flex items-center gap-2"><ArrowLeft size={14} /> Quay lại</button>
           <button onClick={() => currentIndex < filteredSessions.length - 1 && onSwitchSession(filteredSessions[currentIndex + 1])} disabled={currentIndex === filteredSessions.length - 1} className="px-8 py-4 bg-[var(--primary)] text-black font-black uppercase text-xs tracking-widest hover:brightness-110 disabled:opacity-50 transition-all shadow-[0_0_20px_rgba(var(--primary-rgb),0.3)]">SIÊU THỊ TIẾP THEO</button>
         </div>
+
+        {/* --- Barcode Scanner Overlay --- */}
+        <AnimatePresence>
+          {isScannerOpen && (
+            <BarcodeScanner 
+              onScanSuccess={(code) => {
+                const matched = session.items.find((i: any) => 
+                  (i.barcode && i.barcode.toString().trim() === code.trim()) || 
+                  (i.sku && i.sku.toString().trim() === code.trim())
+                );
+                if (matched) {
+                  if (matched.isPicked || (parseInt(matched.actualQty) >= matched.quantity)) {
+                    setScanWarning(`Sản phẩm "${matched.productName}" đã được soạn đủ!`);
+                    // Play warning sound
+                    try { new Audio("https://assets.mixkit.co/active_storage/sfx/2859/2859-preview.mp3").play(); } catch(e) {}
+                    return;
+                  }
+                  setScannedItem(matched);
+                  setIsScannerOpen(false);
+                  // Play success sound
+                  try { new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3").play(); } catch(e) {}
+                  if (navigator.vibrate) navigator.vibrate(200);
+                }
+              }} 
+              onClose={() => setIsScannerOpen(false)} 
+            />
+          )}
+        </AnimatePresence>
+
+        {/* --- Scanned Item Quantity Entry --- */}
+        <AnimatePresence>
+          {scannedItem && (
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              className="absolute inset-0 z-[150] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6"
+            >
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }} 
+                animate={{ scale: 1, y: 0 }} 
+                className="w-full max-w-sm bg-[#0f0f0f] border border-[var(--primary)] p-8 shadow-[0_0_50px_rgba(var(--primary-rgb),0.2)]"
+              >
+                <div className="flex flex-col items-center text-center gap-4">
+                  <div className="w-16 h-16 bg-[var(--primary)]/10 rounded-full flex items-center justify-center text-[var(--primary)] mb-2">
+                    <CheckCircle size={32} />
+                  </div>
+                  <h3 className="text-xl font-black text-white uppercase tracking-tight leading-tight">{scannedItem.productName}</h3>
+                  <div className="flex gap-4 mb-4">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">SKU: {scannedItem.sku}</span>
+                    <span className="text-[10px] font-bold text-[var(--accent)] uppercase tracking-widest">CẦN: {scannedItem.quantity}</span>
+                  </div>
+                  
+                  <div className="w-full space-y-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-left">Nhập số lượng thực tế:</label>
+                      <input 
+                        autoFocus
+                        type="number" 
+                        value={scanQty} 
+                        onChange={(e) => setScanQty(e.target.value)}
+                        placeholder={scannedItem.quantity.toString()}
+                        className="w-full bg-black border-2 border-white/10 p-4 text-3xl font-black text-center text-[var(--primary)] outline-none focus:border-[var(--primary)] transition-all"
+                      />
+                    </div>
+                    
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => {
+                          setScannedItem(null);
+                          setScanQty("");
+                        }}
+                        className="flex-1 py-4 bg-white/5 text-gray-400 font-black uppercase text-xs tracking-widest hover:bg-white/10 transition-all"
+                      >
+                        HỦY
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          const qty = scanQty || scannedItem.quantity.toString();
+                          const qtyNum = parseInt(qty);
+                          const isFullyPicked = qtyNum >= scannedItem.quantity;
+                          
+                          onUpdateLocal(scannedItem.id, qty, isFullyPicked);
+                          await updatePickingItem(scannedItem.id, session.id, qty, isFullyPicked);
+                          setScannedItem(null);
+                          setScanQty("");
+                        }}
+                        className="flex-3 py-4 bg-[var(--primary)] text-black font-black uppercase text-xs tracking-widest hover:brightness-110 transition-all shadow-[0_0_20px_rgba(var(--primary-rgb),0.4)]"
+                      >
+                        XÁC NHẬN
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* --- Scan Warning Overlay --- */}
+        <AnimatePresence>
+          {scanWarning && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[250] bg-black/80 flex items-center justify-center p-6 backdrop-blur-md">
+              <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-[#1a0000] border-2 border-red-500 p-8 max-w-sm w-full text-center shadow-[0_0_50px_rgba(239,68,68,0.2)]">
+                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center text-red-500 mx-auto mb-6">
+                  <X size={32} />
+                </div>
+                <h3 className="text-xl font-black text-white uppercase mb-2">CẢNH BÁO</h3>
+                <p className="text-gray-400 text-sm mb-8 leading-relaxed">{scanWarning}</p>
+                <button onClick={() => setScanWarning(null)} className="w-full py-4 bg-red-500 text-white font-black uppercase text-xs tracking-widest hover:brightness-110 transition-all">ĐÃ HIỂU</button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );

@@ -18,7 +18,7 @@ import { cn } from "@/shared/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface SidebarProps {
-  activeTab: "picking" | "master" | "dashboard" | "settings" | "import";
+  activeTab: "picking" | "master" | "dashboard" | "settings" | "import" | "products";
 }
 
 export const Sidebar = ({ activeTab }: SidebarProps) => {
@@ -27,6 +27,7 @@ export const Sidebar = ({ activeTab }: SidebarProps) => {
   const menuItems = [
     { id: "picking", label: "Soạn hàng", icon: ClipboardList, href: "/picking" },
     { id: "import", label: "Nhập Excel", icon: FileUp, href: "/import" },
+    { id: "products", label: "Sản phẩm", icon: Database, href: "/products" },
     { id: "master", label: "Dữ liệu gốc", icon: Database, href: "/master-data" },
     { id: "dashboard", label: "Thống kê", icon: BarChart3, href: "#" },
     { id: "settings", label: "Cài đặt", icon: Settings, href: "#" },
