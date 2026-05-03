@@ -165,16 +165,18 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
           {isScannerOpen && (
             <BarcodeScanner 
               onScanSuccess={(code) => {
-                const matched = session.items.find((i: any) => 
+                const matched = session.items.find((i: any) => {
+                  const isMatch = (i.barcode && i.barcode.toString().trim() === code.trim()) || 
+                                  (i.sku && i.sku.toString().trim() === code.trim());
+                  // Ưu tiên tìm những món chưa soạn xong
+                  return isMatch && !i.isPicked && (parseInt(i.actualQty || "0") < i.quantity);
+                }) || session.items.find((i: any) => 
                   (i.barcode && i.barcode.toString().trim() === code.trim()) || 
                   (i.sku && i.sku.toString().trim() === code.trim())
                 );
+
                 if (matched) {
-                  if (matched.isPicked || (parseInt(matched.actualQty) >= matched.quantity)) {
-                    setScanWarning(`Sản phẩm "${matched.productName}" đã được soạn đủ!`);
-                    try { new Audio("https://assets.mixkit.co/active_storage/sfx/2859/2859-preview.mp3").play(); } catch(e) {}
-                    return;
-                  }
+                  // Mở modal nhập số lượng cho món tìm được
                   setScannedItem(matched);
                   setIsScannerOpen(false);
                   try { new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3").play(); } catch(e) {}
