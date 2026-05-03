@@ -85,43 +85,52 @@ export const BarcodeScanner = ({ onScanSuccess, onClose, mode = "barcode" }: Bar
       const vw = video.videoWidth;
       const vh = video.videoHeight;
 
-      // Crop only the scan region (center 88% width, middle band)
-      const cropX = Math.floor(vw * 0.06);
-      const cropY = Math.floor(vh * 0.375);
-      const cropW = Math.floor(vw * 0.88);
-      const cropH = Math.floor(vh * 0.25);
+      // Capture wide region (center 90% width, 60% height from 20% to 80%)
+      const cropX = Math.floor(vw * 0.05);
+      const cropY = Math.floor(vh * 0.20);
+      const cropW = Math.floor(vw * 0.90);
+      const cropH = Math.floor(vh * 0.60);
 
       canvas.width = cropW;
       canvas.height = cropH;
       ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-      // Preprocess: grayscale + high contrast
+      // Preprocess: grayscale + contrast boost (not binary)
       const imgData = ctx.getImageData(0, 0, cropW, cropH);
       const d = imgData.data;
       for (let i = 0; i < d.length; i += 4) {
-        const gray = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-        const bw = gray > 128 ? 255 : 0; // binarize
-        d[i] = d[i + 1] = d[i + 2] = bw;
+        let gray = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+        // Boost contrast: stretch range
+        gray = Math.min(255, Math.max(0, (gray - 80) * 1.8));
+        d[i] = d[i + 1] = d[i + 2] = gray;
       }
       ctx.putImageData(imgData, 0, 0);
 
       const { data: { text } } = await workerRef.current.recognize(canvas);
 
       if (text && text.trim()) {
-        // Try to extract date pattern
-        const dateMatch = text.match(/(\d{2})[\/\-\.\s](\d{2})[\/\-\.\s](\d{2,4})/);
-        const contMatch = text.match(/(\d{6,8})/);
+        // Try multiple date patterns
+        const patterns = [
+          /(\d{2})[\/\-\.\s](\d{2})[\/\-\.\s](\d{4})/,    // DD/MM/YYYY
+          /(\d{2})[\/\-\.\s](\d{2})[\/\-\.\s](\d{2})(?!\d)/, // DD/MM/YY
+          /(\d{8})/,                                          // DDMMYYYY
+          /(\d{6})(?!\d)/,                                    // DDMMYY
+        ];
 
-        if (dateMatch) {
-          playBeep();
-          onScanRef.current(text);
-          setOcrFeedback(null);
-        } else if (contMatch) {
-          playBeep();
-          onScanRef.current(text);
-          setOcrFeedback(null);
-        } else {
-          setOcrFeedback(`Không tìm thấy ngày. OCR đọc: "${text.trim().slice(0, 40)}"`);
+        let found = false;
+        for (const p of patterns) {
+          const m = text.match(p);
+          if (m) {
+            playBeep();
+            onScanRef.current(m[0]);
+            setOcrFeedback(null);
+            found = true;
+            break;
+          }
+        }
+
+        if (!found) {
+          setOcrFeedback(`Không tìm thấy ngày. OCR đọc: "${text.trim().slice(0, 50)}"`);
         }
       } else {
         setOcrFeedback("Không đọc được ký tự. Hãy đưa HSD gần camera hơn.");
