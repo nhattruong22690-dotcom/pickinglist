@@ -57,7 +57,7 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
     const sessionHeaders = ["ID", "WeekKey", "Supermarket", "Status", "CreatedAt", "PickingDate"];
 
     await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID, range: "Items!A1:N1", valueInputOption: "RAW", requestBody: { values: [itemHeaders] },
+      spreadsheetId: SHEET_ID, range: "Items!A1:O1", valueInputOption: "RAW", requestBody: { values: [itemHeaders] },
     });
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID, range: "Sessions!A1:F1", valueInputOption: "RAW", requestBody: { values: [sessionHeaders] },
@@ -106,7 +106,7 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
       spreadsheetId: SHEET_ID, range: "Sessions!A:F", valueInputOption: "RAW", requestBody: { values: sessionRows },
     });
     await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID, range: "Items!A:N", valueInputOption: "RAW", requestBody: { values: itemRows },
+      spreadsheetId: SHEET_ID, range: "Items!A:O", valueInputOption: "RAW", requestBody: { values: itemRows },
     });
 
     revalidatePath("/picking");
@@ -213,7 +213,7 @@ export async function updateSessionStatus(id: string, status: string) {
 export async function getSessions() {
   try {
     const sessionRows = await getSheetData("Sessions!A:F");
-    const itemRows = await getSheetData("Items!A:N");
+    const itemRows = await getSheetData("Items!A:O");
     
     const sessionsData = (sessionRows.length > 0 && (sessionRows[0][0] || "").toString().toUpperCase() === "ID") 
       ? sessionRows.slice(1) : sessionRows;
