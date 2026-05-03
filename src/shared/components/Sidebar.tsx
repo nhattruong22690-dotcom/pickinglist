@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { APP_VERSION } from "@/shared/constants/version";
 
 interface SidebarProps {
   activeTab: "picking" | "master" | "dashboard" | "settings" | "import" | "products";
@@ -43,7 +44,7 @@ export const Sidebar = ({ activeTab }: SidebarProps) => {
           </div>
           <div>
             <h2 className="text-white font-black tracking-tighter text-lg leading-none">PICKING</h2>
-            <span className="text-[10px] text-gray-500 uppercase tracking-widest">SaaS / v1.0</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest">{APP_VERSION}</span>
           </div>
         </div>
       </div>
