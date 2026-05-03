@@ -69,16 +69,19 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
       scannerRef.current = html5QrCode;
 
       await html5QrCode.start(
-        { facingMode: "environment" },
+        { 
+          facingMode: "environment",
+        },
         {
-          fps: 20,
+          fps: 30, // Tăng lên 30 để bắt mã vạch cực nhanh trên iPhone
           qrbox: (w: number, h: number) => {
-            const minDim = Math.min(w, h);
+            // Khung hình chữ nhật dài (Landscape) lý tưởng cho mã vạch 1D trên iPhone
             return {
-              width: Math.floor(minDim * 0.8),
-              height: Math.floor(minDim * 0.4),
+              width: Math.floor(w * 0.85),
+              height: Math.floor(h * 0.3),
             };
           },
+          aspectRatio: 1.7777777778, // 16:9 - Tỉ lệ chuẩn của camera iPhone
           // @ts-ignore
           experimentalFeatures: {
             useBarCodeDetectorIfSupported: true

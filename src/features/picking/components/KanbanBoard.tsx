@@ -172,23 +172,33 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
           <motion.button 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setIsScannerOpen(true)}
+            onClick={() => {
+              // @ts-ignore - Kiểm tra xem có phải đang chạy trong trình duyệt AIDC Barcode Toolkit không
+              if (window.AIDC_BarcodeToolkit && typeof window.AIDC_BarcodeToolkit.scan === 'function') {
+                // @ts-ignore
+                window.AIDC_BarcodeToolkit.scan((result: any) => {
+                  if (result && result.text) handleBarcodeScanned(result.text);
+                });
+              } else {
+                setIsScannerOpen(true);
+              }
+            }}
             className="w-full max-w-sm py-8 bg-gradient-to-r from-[var(--primary)]/10 to-[var(--primary)]/5 border-2 border-dashed border-[var(--primary)]/30 flex flex-col items-center justify-center gap-3 relative overflow-hidden group transition-all hover:from-[var(--primary)]/20 hover:to-[var(--primary)]/10"
           >
             <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[var(--primary)] to-transparent opacity-30" />
             <div className="relative z-10 flex items-center gap-4">
-              <div className="p-3 bg-white/5 text-[var(--primary)] rounded-full border border-[var(--primary)]/20">
-                <RefreshCw size={24} className="animate-[spin_4s_linear_infinite]" />
+              <div className="p-3 bg-white/5 text-[var(--primary)] rounded-full border border-[var(--primary)]/20 shadow-[0_0_15px_rgba(var(--primary-rgb),0.2)]">
+                <ScanBarcode size={24} className="group-hover:scale-110 transition-transform" />
               </div>
               <div className="flex flex-col items-start">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-[var(--primary)] rounded-full animate-pulse" />
-                  <span className="text-lg font-black text-white uppercase tracking-tighter">MÁY QUÉT ĐÃ SẴN SÀNG</span>
+                  <span className="text-lg font-black text-white uppercase tracking-tighter">BẮT ĐẦU QUÉT MÃ</span>
                 </div>
-                <span className="text-[9px] font-bold text-[var(--primary)]/70 uppercase tracking-[0.3em]">Hỗ trợ AIDC Toolkit & Máy quét cầm tay</span>
+                <span className="text-[9px] font-bold text-[var(--primary)]/70 uppercase tracking-[0.3em]">Hỗ trợ AIDC Toolkit & Camera iOS</span>
               </div>
             </div>
-            <div className="mt-2 text-[8px] text-gray-600 uppercase font-bold tracking-widest">Hoặc bấm vào đây để dùng Camera điện thoại</div>
+            <div className="mt-2 text-[8px] text-gray-600 uppercase font-bold tracking-widest group-hover:text-gray-400 transition-colors">Bấm để mở máy quét tốc độ cao</div>
           </motion.button>
         </div>
         <div className="flex-1 overflow-y-auto max-h-[60vh] bg-black">
