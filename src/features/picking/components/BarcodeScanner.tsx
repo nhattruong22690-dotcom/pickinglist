@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { Html5Qrcode, Html5QrcodeScannerState, Html5QrcodeSupportedFormats } from "html5-qrcode";
-import { X, Camera, Zap, RefreshCw, AlertTriangle } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
+import { X, Zap, RefreshCw, AlertTriangle, Keyboard } from "lucide-react";
+import { motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 
 interface BarcodeScannerProps {
@@ -16,119 +16,126 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
   const [error, setError] = useState<string | null>(null);
   const [torchOn, setTorchOn] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [manualCode, setManualCode] = useState("");
+  const [showManualInput, setShowManualInput] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const isMountedRef = useRef(true);
   const containerId = "barcode-scanner-container";
 
-  useEffect(() => {
-    let isMounted = true;
-    const container = document.getElementById(containerId);
+  // Stable callback ref to avoid re-renders
+  const onScanSuccessRef = useRef(onScanSuccess);
+  onScanSuccessRef.current = onScanSuccess;
 
-    const startScanner = async () => {
-      // Add a small delay to ensure any previous session is fully closed
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      if (!isMounted) return;
-
+  const stopScanner = useCallback(async () => {
+    if (scannerRef.current) {
       try {
-        // --- BƯỚC 1: KÍCH HOẠT QUYỀN TRUY CẬP NATIVE (SỬA LỖI IOS) ---
-        // Trên iOS, đôi khi thư viện không tự kích hoạt được popup hỏi quyền.
-        // Việc gọi trực tiếp getUserMedia sẽ ép iOS hiện popup "Allow Camera" 1 lần duy nhất.
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-          // Ngay sau khi được cấp quyền, tắt stream ngay lập tức để nhường quyền cho html5-qrcode
-          stream.getTracks().forEach(track => track.stop());
-        } catch (mediaErr) {
-          // Nếu người dùng từ chối quyền ở bước này, ném lỗi ra ngoài luôn
-          throw new Error("Permission Denied");
+        const state = scannerRef.current.getState();
+        if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+          await scannerRef.current.stop();
         }
-
-        if (!isMounted) return;
-
-        // --- BƯỚC 2: KHỞI ĐỘNG SCANNER ---
-        const html5QrCode = new Html5Qrcode(containerId, {
-          verbose: false
-        });
-        scannerRef.current = html5QrCode;
-
-        // Tối ưu hóa cấu hình để quét nhanh và chính xác nhất
-        const config = {
-          fps: 20,
-          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-            // Tăng diện tích quét để dễ bắt mã hơn
-            const width = Math.floor(viewfinderWidth * 0.8);
-            const height = Math.floor(viewfinderHeight * 0.4);
-            return { width, height };
-          },
-          // Không ép aspectRatio để lấy độ phân giải gốc của camera
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true
-          }
-        };
-
-        await html5QrCode.start(
-          { 
-            facingMode: "environment",
-            // Chỉ dùng ideal, bỏ min/max vì iOS rất khắt khe và thường báo lỗi NotReadableError nếu cấu hình không khớp hoàn toàn
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          },
-          config,
-          (decodedText) => {
-            if (isMounted) onScanSuccess(decodedText);
-          },
-          () => {} 
-        );
-
-        if (isMounted) {
-          setIsCameraReady(true);
-          setIsScanning(true);
-        }
-      } catch (err: any) {
-        if (isMounted) {
-          // Suppress error in console since we handle it in the UI now
-          console.warn("Scanner notice: Camera not available, switching to manual input mode.", err.name);
-          setError("Không thể khởi động camera. Có thể camera đang bị ứng dụng khác sử dụng hoặc trình duyệt chưa được cấp quyền.");
-        }
+        scannerRef.current.clear();
+      } catch (e) {
+        // ignore cleanup errors
       }
-    };
+      scannerRef.current = null;
+    }
+  }, []);
 
+  const startScanner = useCallback(async () => {
+    if (!isMountedRef.current) return;
+
+    // Đảm bảo scanner cũ đã dừng hoàn toàn
+    await stopScanner();
+
+    // Chờ iOS giải phóng tài nguyên camera
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    if (!isMountedRef.current) return;
+
+    try {
+      const html5QrCode = new Html5Qrcode(containerId, { verbose: false });
+      scannerRef.current = html5QrCode;
+
+      // Cấu hình tối giản, tương thích tối đa iOS Safari
+      await html5QrCode.start(
+        { facingMode: "environment" },
+        {
+          fps: 15,
+          qrbox: (w: number, h: number) => ({
+            width: Math.floor(w * 0.85),
+            height: Math.floor(h * 0.35),
+          }),
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        },
+        (decodedText) => {
+          if (isMountedRef.current) {
+            onScanSuccessRef.current(decodedText);
+          }
+        },
+        () => {} // ignore per-frame errors
+      );
+
+      if (isMountedRef.current) {
+        setIsCameraReady(true);
+        setIsScanning(true);
+        setError(null);
+      }
+    } catch (err: any) {
+      if (!isMountedRef.current) return;
+
+      const errName = err?.name || err?.message || "";
+      console.warn("[Scanner]", errName);
+
+      if (errName.includes("NotAllowedError") || errName.includes("Permission")) {
+        setError("Bạn đã từ chối quyền camera. Vào Cài đặt > Safari > Camera và bật lại quyền cho trang web này.");
+      } else if (errName.includes("NotFoundError")) {
+        setError("Thiết bị không có camera phía sau.");
+      } else {
+        // NotReadableError hoặc lỗi khác — camera bận
+        setError("Camera đang bận hoặc chưa sẵn sàng. Nhấn 'Thử lại' hoặc nhập mã bằng tay.");
+      }
+    }
+  }, [stopScanner]);
+
+  // Mount / Unmount
+  useEffect(() => {
+    isMountedRef.current = true;
     startScanner();
 
     return () => {
-      isMounted = false;
-      if (scannerRef.current) {
-        const state = scannerRef.current.getState();
-        if (state !== Html5QrcodeScannerState.NOT_STARTED) {
-          scannerRef.current.stop()
-            .then(() => scannerRef.current?.clear())
-            .catch(err => console.error("Error stopping scanner", err));
-        }
-      }
+      isMountedRef.current = false;
+      stopScanner();
     };
-  }, []); // Only run once on mount
+  }, [startScanner, stopScanner]);
+
+  // Retry handler
+  const handleRetry = useCallback(async () => {
+    setError(null);
+    setIsCameraReady(false);
+    setIsScanning(false);
+    setRetryCount(prev => prev + 1);
+    await startScanner();
+  }, [startScanner]);
 
   const toggleTorch = async () => {
     if (scannerRef.current && isScanning) {
       try {
-        const nextTorchState = !torchOn;
+        const next = !torchOn;
         await scannerRef.current.applyVideoConstraints({
-          // @ts-ignore - torch is not in standard types but supported by many browsers
-          advanced: [{ torch: nextTorchState }]
+          // @ts-ignore
+          advanced: [{ torch: next }],
         });
-        setTorchOn(nextTorchState);
-      } catch (err) {
-        console.warn("Torch not supported on this device/browser");
+        setTorchOn(next);
+      } catch {
+        console.warn("Torch not supported");
       }
     }
   };
 
-  const [manualCode, setManualCode] = useState("");
-
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (manualCode.trim()) {
-      onScanSuccess(manualCode.trim());
-    }
+    if (manualCode.trim()) onScanSuccess(manualCode.trim());
   };
 
   return (
@@ -136,116 +143,127 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4 lg:p-12"
+      className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center"
     >
-      <div className="w-full max-w-lg aspect-square relative bg-white/5 border border-white/10 rounded-sm overflow-hidden shadow-[0_0_100px_rgba(0,0,0,0.8)]">
+      {/* Camera viewport */}
+      <div className="w-full flex-1 relative bg-black overflow-hidden">
         <div id={containerId} className="w-full h-full" />
-        
-        {/* Scanner Overlay UI */}
-        <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-          <div className="w-64 h-64 border-2 border-[var(--primary)]/30 relative">
-            <motion.div 
-              animate={{ top: ["0%", "100%", "0%"] }}
-              transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-              className="absolute left-0 right-0 h-[1px] bg-[var(--primary)] shadow-[0_0_15px_rgba(var(--primary-rgb),1)]" 
-            />
-            
-            {/* Corners */}
-            <div className="absolute -top-1 -left-1 w-6 h-6 border-t-2 border-l-2 border-[var(--primary)]" />
-            <div className="absolute -top-1 -right-1 w-6 h-6 border-t-2 border-r-2 border-[var(--primary)]" />
-            <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-2 border-l-2 border-[var(--primary)]" />
-            <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-2 border-r-2 border-[var(--primary)]" />
-          </div>
-        </div>
 
-        {!isCameraReady && !error && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#050505] gap-4">
-            <RefreshCw size={32} className="text-[var(--primary)] animate-spin" />
-            <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Đang kết nối camera...</span>
+        {/* Scanning overlay */}
+        {isCameraReady && (
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+            <div className="w-[85%] h-[35%] border-2 border-[var(--primary)]/40 relative">
+              <motion.div
+                animate={{ top: ["0%", "100%", "0%"] }}
+                transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
+                className="absolute left-0 right-0 h-[2px] bg-[var(--primary)] shadow-[0_0_20px_rgba(var(--primary-rgb),0.8)]"
+              />
+              <div className="absolute -top-1 -left-1 w-8 h-8 border-t-3 border-l-3 border-[var(--primary)]" />
+              <div className="absolute -top-1 -right-1 w-8 h-8 border-t-3 border-r-3 border-[var(--primary)]" />
+              <div className="absolute -bottom-1 -left-1 w-8 h-8 border-b-3 border-l-3 border-[var(--primary)]" />
+              <div className="absolute -bottom-1 -right-1 w-8 h-8 border-b-3 border-r-3 border-[var(--primary)]" />
+            </div>
           </div>
         )}
 
+        {/* Loading state */}
+        {!isCameraReady && !error && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black gap-4">
+            <RefreshCw size={40} className="text-[var(--primary)] animate-spin" />
+            <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">
+              Đang kết nối camera...
+            </span>
+          </div>
+        )}
+
+        {/* Error state */}
         {error && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0a0000] p-8 text-center gap-6">
-            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-2">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black p-8 text-center gap-5">
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center">
               <AlertTriangle size={32} className="text-red-500" />
             </div>
-            <div className="space-y-2">
-              <h3 className="text-white font-black uppercase text-sm tracking-widest">Không thể mở Camera</h3>
-              <p className="text-gray-500 text-[10px] uppercase leading-relaxed max-w-xs mx-auto">Thiết bị không có camera hoặc quyền truy cập bị từ chối.</p>
-            </div>
-            
-            <form onSubmit={handleManualSubmit} className="w-full space-y-3 mt-4">
-              <input 
+            <p className="text-xs font-bold text-gray-300 leading-relaxed max-w-xs">{error}</p>
+
+            <button
+              onClick={handleRetry}
+              className="w-full max-w-xs py-4 bg-[var(--primary)] text-black text-[10px] font-black uppercase tracking-widest hover:brightness-110 transition-all shadow-[0_0_20px_rgba(var(--primary-rgb),0.3)]"
+            >
+              Thử lại
+            </button>
+
+            <form onSubmit={handleManualSubmit} className="w-full max-w-xs space-y-3 mt-2">
+              <input
                 autoFocus
-                type="text" 
-                placeholder="NHẬP MÃ BARCODE TAY..." 
+                type="text"
+                placeholder="NHẬP MÃ BARCODE TAY..."
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value)}
                 className="w-full bg-white/5 border border-white/10 px-4 py-4 text-center text-xs font-black text-[var(--primary)] outline-none focus:border-[var(--primary)] transition-all"
               />
-              <button 
+              <button
                 type="submit"
-                className="w-full py-4 bg-[var(--primary)] text-black text-[10px] font-black uppercase tracking-widest hover:brightness-110 transition-all shadow-[0_0_20px_rgba(var(--primary-rgb),0.3)]"
+                className="w-full py-3 bg-white/10 text-white text-[10px] font-black uppercase tracking-widest hover:bg-white/20 transition-all"
               >
                 Xác nhận mã
               </button>
             </form>
 
-            <button 
-              onClick={onClose}
-              className="text-gray-600 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all mt-4"
-            >
-              Hủy bỏ
+            <button onClick={onClose} className="text-gray-600 hover:text-white text-[10px] font-black uppercase tracking-widest mt-2">
+              Đóng
             </button>
           </div>
         )}
       </div>
 
-      {!error && (
-        <>
-          <form onSubmit={handleManualSubmit} className="mt-8 w-full max-w-lg flex gap-2">
-            <input 
-              type="text" 
-              placeholder="NHẬP MÃ TAY..." 
+      {/* Bottom controls */}
+      <div className="w-full bg-black/95 border-t border-white/10 p-4 pb-8 space-y-4">
+        {/* Manual input row (always visible when camera works) */}
+        {!error && (
+          <form onSubmit={handleManualSubmit} className="flex gap-2">
+            <input
+              type="text"
+              placeholder="HOẶC NHẬP MÃ TAY..."
               value={manualCode}
               onChange={(e) => setManualCode(e.target.value)}
-              className="flex-1 bg-white/5 border border-white/10 px-4 py-4 text-xs font-black text-white outline-none focus:border-[var(--primary)] transition-all"
+              className="flex-1 bg-white/5 border border-white/10 px-4 py-3 text-xs font-black text-white outline-none focus:border-[var(--primary)] transition-all"
             />
-            <button 
+            <button
               type="submit"
-              className="px-8 bg-white/10 text-white text-[10px] font-black uppercase tracking-widest hover:bg-white/20 transition-all border border-white/10"
+              className="px-6 bg-[var(--primary)] text-black text-[10px] font-black uppercase tracking-widest hover:brightness-110 transition-all"
             >
               Gửi
             </button>
           </form>
+        )}
 
-          <div className="mt-12 flex gap-8">
+        {/* Action buttons */}
+        <div className="flex justify-center gap-6">
+          {isScanning && (
             <motion.button
               whileTap={{ scale: 0.9 }}
               onClick={toggleTorch}
               className={cn(
-                "p-4 rounded-full border transition-all",
-                torchOn ? "bg-[var(--primary)] border-[var(--primary)] text-black" : "bg-white/5 border-white/10 text-white hover:bg-white/10"
+                "p-3 rounded-full border transition-all",
+                torchOn
+                  ? "bg-[var(--primary)] border-[var(--primary)] text-black"
+                  : "bg-white/5 border-white/10 text-white hover:bg-white/10"
               )}
             >
-              <Zap size={24} />
+              <Zap size={22} />
             </motion.button>
-            
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={onClose}
-              className="p-4 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all"
-            >
-              <X size={24} />
-            </motion.button>
-          </div>
-        </>
-      )}
+          )}
 
-      <div className="mt-12 max-w-xs text-center">
-        <p className="text-[10px] font-black text-gray-700 uppercase tracking-[0.3em] leading-relaxed">
-          Sử dụng camera hoặc nhập mã thủ công
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={onClose}
+            className="p-3 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all"
+          >
+            <X size={22} />
+          </motion.button>
+        </div>
+
+        <p className="text-[9px] font-black text-gray-700 uppercase tracking-[0.3em] text-center">
+          Đưa mã vạch vào khung hình hoặc nhập mã thủ công
         </p>
       </div>
     </motion.div>
