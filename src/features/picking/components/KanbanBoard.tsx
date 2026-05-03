@@ -241,7 +241,20 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
                       </button>
                       <button 
                         onClick={async () => {
-                          const qty = scanQty || scannedItem.quantity.toString();
+                          const qty = scannedItem.quantity.toString();
+                          onUpdateLocal(scannedItem.id, qty, true);
+                          await updatePickingItem(scannedItem.id, session.id, qty, true);
+                          setScannedItem(null);
+                          setScanQty("");
+                        }}
+                        className="flex-2 py-4 bg-white/10 text-white font-black uppercase text-xs tracking-widest hover:bg-white/20 transition-all border border-white/10"
+                      >
+                        LẤY ĐỦ
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          const currentActual = parseInt(scannedItem.actualQty || "0");
+                          const qty = scanQty || (currentActual + 1).toString();
                           const qtyNum = parseInt(qty);
                           const isFullyPicked = qtyNum >= scannedItem.quantity;
                           

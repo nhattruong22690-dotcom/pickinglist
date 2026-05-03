@@ -68,11 +68,21 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
       });
       scannerRef.current = html5QrCode;
 
-      // Bỏ qrbox để sử dụng toàn bộ khung hình, giúp camera dễ lấy nét các mã vạch dài
       await html5QrCode.start(
         { facingMode: "environment" },
         {
-          fps: 15,
+          fps: 20,
+          qrbox: (w: number, h: number) => {
+            const minDim = Math.min(w, h);
+            return {
+              width: Math.floor(minDim * 0.8),
+              height: Math.floor(minDim * 0.4),
+            };
+          },
+          // @ts-ignore
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true
+          }
         },
         (decodedText) => {
           if (isMountedRef.current) {
