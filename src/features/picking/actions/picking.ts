@@ -55,12 +55,16 @@ export async function savePickingSessions(weekKey: string, pickingDate: string, 
 
     const itemHeaders = ["ID", "SessionID", "SupermarketCode", "Supermarket", "ProductName", "Quantity", "SKU", "Specs", "UnitWeight(g)", "ActualQty", "IsPicked", "TotalWeight(kg)", "Packages", "PickingDate", "Barcode"];
     const sessionHeaders = ["ID", "WeekKey", "Supermarket", "Status", "CreatedAt", "PickingDate"];
+    const batchHeaders = ["ID", "ItemID", "SessionID", "Quantity", "ExpiryDate", "CreatedAt"];
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID, range: "Items!A1:O1", valueInputOption: "RAW", requestBody: { values: [itemHeaders] },
     });
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID, range: "Sessions!A1:F1", valueInputOption: "RAW", requestBody: { values: [sessionHeaders] },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID, range: "ItemBatches!A1:F1", valueInputOption: "RAW", requestBody: { values: [batchHeaders] },
     });
 
     const sessionRows: any[] = [];
@@ -167,6 +171,103 @@ export async function updatePickingItem(itemId: string, sessionId: string, actua
   }
 }
 
+export async function addBatch(itemId: string, sessionId: string, qty: number, expiryDate: string) {
+  try {
+    const sheets = await getGoogleSheetsClient();
+    const batchId = uuidv4();
+    const createdAt = new Date().toISOString();
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "ItemBatches!A:F",
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[batchId, itemId, sessionId, qty, expiryDate, createdAt]]
+      }
+    });
+
+    // Cập nhật lại tổng số lượng đã soạn của Item
+    const allBatchesRaw = await getSheetData("ItemBatches!A:D");
+    const batchesData = (allBatchesRaw.length > 0 && (allBatchesRaw[0][0] || "").toString().toUpperCase() === "ID")
+      ? allBatchesRaw.slice(1) : allBatchesRaw;
+
+    const itemBatches = batchesData.filter(row => (row[1] || "").toString().trim() === itemId.trim());
+    const totalActualQty = itemBatches.reduce((sum, row) => sum + (parseInt(row[3]) || 0), 0);
+
+    // Lấy thông tin Item để biết Qty cần thiết
+    const allItemsRaw = await getSheetData("Items!A:F");
+    const itemsData = (allItemsRaw.length > 0 && (allItemsRaw[0][0] || "").toString().toUpperCase() === "ID")
+      ? allItemsRaw.slice(1) : allItemsRaw;
+
+    const itemRow = itemsData.find(row => (row[0] || "").toString().trim() === itemId.trim());
+    const targetQty = itemRow ? parseInt(itemRow[5]) : 0;
+    const isFullyPicked = totalActualQty >= targetQty;
+
+    await updatePickingItem(itemId, sessionId, totalActualQty, isFullyPicked);
+
+    revalidatePath("/picking");
+    return { success: true, batchId };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function deleteBatch(batchId: string, itemId: string, sessionId: string) {
+  try {
+    const sheets = await getGoogleSheetsClient();
+    const rows = await getSheetData("ItemBatches!A:A");
+    const rowIndex = rows.findIndex(row => (row[0] || "").toString().trim() === batchId.trim());
+    
+    if (rowIndex === -1) throw new Error("Batch not found");
+
+    // Google Sheets API doesn't have a direct "delete row" by index easily via values.update
+    // We clear it or use batchUpdate to delete dimension
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [{
+          deleteDimension: {
+            range: {
+              sheetId: (await getSheetId(sheets, "ItemBatches")),
+              dimension: "ROWS",
+              startIndex: rowIndex,
+              endIndex: rowIndex + 1
+            }
+          }
+        }]
+      }
+    });
+
+    // Recalculate item total
+    const allBatchesRaw = await getSheetData("ItemBatches!A:D");
+    const batchesData = (allBatchesRaw.length > 0 && (allBatchesRaw[0][0] || "").toString().toUpperCase() === "ID")
+      ? allBatchesRaw.slice(1) : allBatchesRaw;
+
+    const itemBatches = batchesData.filter(row => (row[1] || "").toString().trim() === itemId.trim() && (row[0] || "").toString().trim() !== batchId.trim());
+    const totalActualQty = itemBatches.reduce((sum, row) => sum + (parseInt(row[3]) || 0), 0);
+
+    const allItemsRaw = await getSheetData("Items!A:F");
+    const itemsData = (allItemsRaw.length > 0 && (allItemsRaw[0][0] || "").toString().toUpperCase() === "ID")
+      ? allItemsRaw.slice(1) : allItemsRaw;
+
+    const itemRow = itemsData.find(row => (row[0] || "").toString().trim() === itemId.trim());
+    const targetQty = itemRow ? parseInt(itemRow[5]) : 0;
+    
+    await updatePickingItem(itemId, sessionId, totalActualQty, totalActualQty >= targetQty);
+
+    revalidatePath("/picking");
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function getSheetId(sheets: any, title: string) {
+  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+  const sheet = spreadsheet.data.sheets.find((s: any) => s.properties.title === title);
+  return sheet.properties.sheetId;
+}
+
 export async function updateProductBarcode(productName: string, newBarcode: string) {
   try {
     const sheets = await getGoogleSheetsClient();
@@ -214,39 +315,53 @@ export async function getSessions() {
   try {
     const sessionRows = await getSheetData("Sessions!A:F");
     const itemRows = await getSheetData("Items!A:O");
+    const batchRows = await getSheetData("ItemBatches!A:F");
     
     const sessionsData = (sessionRows.length > 0 && (sessionRows[0][0] || "").toString().toUpperCase() === "ID") 
       ? sessionRows.slice(1) : sessionRows;
     const itemsData = (itemRows.length > 0 && (itemRows[0][0] || "").toString().toUpperCase() === "ID") 
       ? itemRows.slice(1) : itemRows;
+    const batchesData = (batchRows.length > 0 && (batchRows[0][0] || "").toString().toUpperCase() === "ID")
+      ? batchRows.slice(1) : batchRows;
 
     return sessionsData.map(row => {
       const sessionId = (row[0] || "").toString().trim();
       return {
         id: sessionId, 
-        weekKey: (row[1] || "").toString().toUpperCase().trim(), // Đảm bảo WeekKey hiển thị chữ hoa
+        weekKey: (row[1] || "").toString().toUpperCase().trim(),
         supermarket: (row[2] || "N/A"), 
         status: (row[3] || "PENDING"), 
         createdAt: row[4], 
         pickingDate: row[5] || "",
         items: itemsData
           .filter(item => (item[1] || "").toString().trim() === sessionId)
-          .map(item => ({
-            id: (item[0] || "").toString().trim(), 
-            supermarketCode: item[2], 
-            supermarket: item[3], 
-            productName: (item[4] || "Unknown"), 
-            quantity: parseInt(item[5] || "0"),
-            sku: (item[6] || ""), 
-            specs: item[7], 
-            weight: item[8], 
-            actualQty: item[9], 
-            isPicked: (item[10] || "").toString().toUpperCase() === "TRUE",
-            totalWeightKg: item[11], 
-            packages: item[12], 
-            pickingDate: item[13],
-            barcode: (item[14] || "") // Add barcode field to items
-          }))
+          .map(item => {
+            const itemId = (item[0] || "").toString().trim();
+            return {
+              id: itemId, 
+              supermarketCode: item[2], 
+              supermarket: item[3], 
+              productName: (item[4] || "Unknown"), 
+              quantity: parseInt(item[5] || "0"),
+              sku: (item[6] || ""), 
+              specs: item[7], 
+              weight: item[8], 
+              actualQty: item[9], 
+              isPicked: (item[10] || "").toString().toUpperCase() === "TRUE",
+              totalWeightKg: item[11], 
+              packages: item[12], 
+              pickingDate: item[13],
+              barcode: (item[14] || ""),
+              batches: batchesData
+                .filter(b => (b[1] || "").toString().trim() === itemId)
+                .map(b => ({
+                  id: b[0],
+                  qty: parseInt(b[3] || "0"),
+                  expiryDate: b[4],
+                  createdAt: b[5]
+                }))
+            };
+          })
       };
     });
   } catch (error) {

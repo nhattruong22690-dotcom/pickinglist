@@ -2,84 +2,139 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Clock, Play, CheckCircle, MoreVertical, Package, ArrowRight, Store, 
+import {
+  Clock, Play, CheckCircle, MoreVertical, Package, ArrowRight, Store,
   Check, Save, Weight, Box, Search, Calendar, X, ChevronRight,
   ChevronLeft, ArrowLeft, ChevronDown, Scale, Layers, ChevronUp,
   LayoutDashboard, ClipboardList, Filter, Boxes, ScanBarcode, RefreshCw
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { updateSessionStatus, updatePickingItem } from "../actions/picking";
+import { updateSessionStatus, updatePickingItem, addBatch, deleteBatch } from "../actions/picking";
 import { useRouter } from "next/navigation";
 import { BarcodeScanner } from "./BarcodeScanner";
 
 // --- Sub-component for Picking Item Row ---
 
-const PickingItemRow = ({ item, sessionId, onUpdateLocal }: { item: any, sessionId: string, onUpdateLocal: (itemId: string, qty: string, picked: boolean) => void }) => {
-  const [actualQty, setActualQty] = useState(item.actualQty || "");
+const PickingItemRow = ({ item, sessionId, onUpdateLocal, onItemClick }: { item: any, sessionId: string, onUpdateLocal: (itemId: string, qty: string, picked: boolean) => void, onItemClick: (item: any) => void }) => {
   const [isCompleted, setIsCompleted] = useState(item.isPicked);
   const [isChecked, setIsChecked] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   useEffect(() => {
-    setActualQty(item.actualQty || "");
     setIsCompleted(item.isPicked);
   }, [item]);
-
-  const handleManualSave = async () => {
-    if (isSaving) return;
-    setIsSaving(true);
-    const completed = parseInt(actualQty) >= item.quantity;
-    setIsCompleted(completed);
-    // Optimistic Update
-    onUpdateLocal(item.id, actualQty, completed);
-    const result = await updatePickingItem(item.id, sessionId, actualQty, completed);
-    setIsSaving(false);
-  };
 
   const handleToggleChecked = () => {
     setIsChecked(!isChecked);
   };
 
+  const handleDeleteBatch = async (batchId: string) => {
+    setIsDeleting(batchId);
+    await deleteBatch(batchId, item.id, sessionId);
+    setIsDeleting(null);
+  };
+
   return (
-    <motion.div 
-      initial={false}
-      animate={{ 
-        backgroundColor: isCompleted ? "rgba(34, 197, 94, 0.15)" : "rgba(255, 255, 255, 0)",
-        borderColor: isCompleted ? "rgba(34, 197, 94, 0.3)" : "rgba(255, 255, 255, 0.05)"
-      }}
-      className={cn(
-        "grid grid-cols-12 gap-3 py-6 px-4 border-b transition-all relative overflow-hidden",
-        isCompleted ? "border-green-500/30 shadow-[inset_0_0_20px_rgba(34,197,94,0.05)]" : "border-white/5"
-      )}
-    >
-      {isCompleted && <motion.div initial={{ x: -100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="absolute left-0 top-0 bottom-0 w-1 bg-green-500" />}
-      <div className="col-span-2 flex items-center justify-center">
-        <motion.button whileTap={{ scale: 0.8 }} onClick={handleToggleChecked} className={cn("w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all shadow-xl", isChecked ? "bg-green-500 border-green-500 text-black scale-110" : "border-gray-700 text-transparent")}>
-          <AnimatePresence mode="wait">
-            {isChecked && <motion.div key="checked" initial={{ scale: 0, rotate: -45 }} animate={{ scale: 1, rotate: 0 }} exit={{ scale: 0 }}><Check size={22} strokeWidth={4} /></motion.div>}
-          </AnimatePresence>
-        </motion.button>
-      </div>
-      <div className="col-span-6 flex flex-col justify-center">
-        <div className={cn("text-sm font-black uppercase tracking-tight mb-2 transition-all", isCompleted ? "text-green-500 opacity-90" : "text-white")}>{item.productName}</div>
-        <div className="flex flex-wrap gap-3">
-          {item.sku && <span className="text-[9px] bg-white/5 px-2 py-0.5 border border-white/10 text-gray-500 font-mono rounded-sm">{item.sku}</span>}
-          <div className="flex items-center gap-3">
-             {item.specs && <span className="text-[9px] text-gray-600 flex items-center gap-1"><Box size={10} /> {item.specs}</span>}
-             {item.packages > 0 && <span className="text-[9px] text-[var(--primary)] font-bold flex items-center gap-1"><Layers size={10} /> {item.packages} KIỆN</span>}
-             {item.totalWeightKg > 0 && <span className="text-[9px] text-[var(--accent)] font-bold flex items-center gap-1"><Scale size={10} /> {item.totalWeightKg}KG</span>}
+    <div className="border-b border-white/5">
+      <motion.div
+        initial={false}
+        animate={{
+          backgroundColor: isCompleted ? "rgba(34, 197, 94, 0.15)" : "rgba(255, 255, 255, 0)",
+          borderColor: isCompleted ? "rgba(34, 197, 94, 0.3)" : "rgba(255, 255, 255, 0.05)"
+        }}
+        onClick={() => onItemClick(item)}
+        className={cn(
+          "grid grid-cols-12 gap-3 py-6 px-4 transition-all relative overflow-hidden cursor-pointer hover:bg-white/[0.04] group",
+          isCompleted && "shadow-[inset_0_0_20px_rgba(34,197,94,0.05)]"
+        )}
+      >
+        {isCompleted && <motion.div initial={{ x: -100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="absolute left-0 top-0 bottom-0 w-1 bg-green-500" />}
+        <div className="col-span-2 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <motion.button whileTap={{ scale: 0.8 }} onClick={handleToggleChecked} className={cn("w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all shadow-xl", isChecked ? "bg-green-500 border-green-500 text-black scale-110" : "border-gray-700 text-transparent")}>
+            <AnimatePresence mode="wait">
+              {isChecked && <motion.div key="checked" initial={{ scale: 0, rotate: -45 }} animate={{ scale: 1, rotate: 0 }} exit={{ scale: 0 }}><Check size={22} strokeWidth={4} /></motion.div>}
+            </AnimatePresence>
+          </motion.button>
+        </div>
+        <div className="col-span-6 flex flex-col justify-center">
+          <div className={cn("text-sm font-black uppercase tracking-tight mb-1 transition-all", isCompleted ? "text-green-500 opacity-90" : "text-white")}>{item.productName}</div>
+          <div className="flex flex-wrap gap-3">
+            {item.sku && <span className="text-[9px] bg-white/5 px-2 py-0.5 border border-white/10 text-gray-400 font-mono rounded-sm">{item.sku}</span>}
+            <div className="flex items-center gap-3">
+              {item.specs && <span className="text-[9px] text-gray-600 flex items-center gap-1"><Box size={10} /> {item.specs}</span>}
+              {item.packages > 0 && <span className="text-[9px] text-[var(--primary)] font-bold flex items-center gap-1"><Layers size={10} /> {item.packages} KIỆN</span>}
+            </div>
           </div>
         </div>
-      </div>
-      <div className="col-span-4 flex flex-col items-end justify-center gap-2">
-        <div className={cn("text-sm font-black uppercase transition-all", isCompleted ? "text-green-500" : "text-white")}>{isCompleted ? "ĐÃ XONG: " : "CẦN: "} {item.quantity}</div>
-        <div className="flex items-center gap-1.5 mt-1">
-          <input type="number" value={actualQty} onChange={(e) => setActualQty(e.target.value)} placeholder="0" className={cn("w-20 bg-white/5 border border-white/10 text-sm font-black text-center py-2 outline-none rounded-sm transition-all focus:border-[var(--accent)]", isCompleted ? "text-green-500" : "text-[var(--accent)]")} />
-          <button onClick={handleManualSave} disabled={isSaving} className={cn("p-2 rounded-sm transition-all", isSaving ? "opacity-50" : "hover:bg-[var(--accent)] hover:text-black bg-white/5 text-gray-500")}><Save size={18} className={isSaving ? "animate-spin" : ""} /></button>
+        <div className="col-span-4 flex items-center justify-end gap-4" onClick={(e) => e.stopPropagation()}>
+          <div className="flex flex-col items-end gap-1">
+            <div className={cn("text-xs font-black uppercase transition-all", isCompleted ? "text-green-500" : "text-white")}>
+              {item.actualQty || 0} / {item.quantity}
+            </div>
+            <div className="w-16 h-1 bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full bg-[var(--primary)] transition-all" style={{ width: `${Math.min(100, ((item.actualQty || 0) / item.quantity) * 100)}%` }} />
+            </div>
+            {item.batches && item.batches.length > 0 && (
+              <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest leading-none mt-1">
+                {item.batches.length} LÔ
+              </span>
+            )}
+          </div>
+
+          {item.batches && item.batches.length > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
+              className={cn(
+                "w-12 h-12 rounded-xl flex items-center justify-center transition-all border shadow-lg shrink-0",
+                isExpanded
+                  ? "bg-[var(--primary)] border-[var(--primary)] text-black shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]"
+                  : "bg-white/5 border-white/10 text-[var(--primary)] hover:bg-white/10 active:scale-90"
+              )}
+            >
+              <ChevronDown
+                size={26}
+                className={cn("transition-transform duration-300", isExpanded && "rotate-180")}
+              />
+            </button>
+          )}
         </div>
-      </div>
-    </motion.div>
+      </motion.div>
+
+      <AnimatePresence>
+        {isExpanded && item.batches && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden bg-white/[0.01] border-t border-white/5"
+          >
+            <div className="p-4 space-y-2">
+              <div className="grid grid-cols-12 gap-2 text-[8px] font-black text-gray-600 uppercase tracking-widest px-2">
+                <div className="col-span-4">Số lượng</div>
+                <div className="col-span-6">Hạn sử dụng (HSD)</div>
+                <div className="col-span-2"></div>
+              </div>
+              {item.batches.map((batch: any) => (
+                <div key={batch.id} className="grid grid-cols-12 gap-2 items-center bg-white/5 p-2 border border-white/5 rounded-sm group/batch">
+                  <div className="col-span-4 text-sm font-black text-white">{batch.qty}</div>
+                  <div className="col-span-6 text-sm font-mono font-bold text-[var(--accent)]">{batch.expiryDate || "---"}</div>
+                  <div className="col-span-2 flex justify-end">
+                    <button
+                      onClick={() => handleDeleteBatch(batch.id)}
+                      disabled={isDeleting === batch.id}
+                      className="p-1.5 text-gray-600 hover:text-red-500 transition-colors"
+                    >
+                      {isDeleting === batch.id ? <RefreshCw size={12} className="animate-spin" /> : <X size={14} />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 };
 
@@ -94,27 +149,65 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
   const totalPackages = session.items.reduce((acc: number, item: any) => acc + (parseFloat(item.packages) || 0), 0).toFixed(2);
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerMode, setScannerMode] = useState<"barcode" | "ocr">("barcode");
   const [scannedItem, setScannedItem] = useState<any | null>(null);
   const [scanQty, setScanQty] = useState("");
+  const [scanExpiry, setScanExpiry] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [scanWarning, setScanWarning] = useState<string | null>(null);
+
   const handleBarcodeScanned = (code: string) => {
-    const matched = session.items.find((i: any) => 
-      (i.barcode && i.barcode.toString().trim() === code.trim()) || 
+    const matched = session.items.find((i: any) =>
+      (i.barcode && i.barcode.toString().trim() === code.trim()) ||
       (i.sku && i.sku.toString().trim() === code.trim())
     );
 
     if (matched) {
       setScannedItem(matched);
       setIsScannerOpen(false);
+      setScannerMode("barcode");
       setScanWarning(null);
-      try { new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3").play(); } catch(e) {}
+      try { new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3").play(); } catch (e) { }
       if (navigator.vibrate) navigator.vibrate(200);
     } else {
       const availableCodes = session.items.map((i: any) => i.barcode || i.sku).filter(Boolean).join(", ");
       setScanWarning(`Mã "${code}" không có trong đơn của ${session.supermarket}!\n\nCác mã đang chờ: ${availableCodes || 'Không có mã'}`);
-      try { new Audio("https://assets.mixkit.co/active_storage/sfx/2859/2859-preview.mp3").play(); } catch(e) {}
+      try { new Audio("https://assets.mixkit.co/active_storage/sfx/2859/2859-preview.mp3").play(); } catch (e) { }
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
     }
+  };
+
+  const handleOcrResult = (text: string) => {
+    // 1. Try to find DD/MM/YYYY or DD-MM-YYYY
+    const datePattern = /(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/;
+    const match = text.match(datePattern);
+
+    if (match) {
+      setScanExpiry(`${match[1]}/${match[2]}/${match[3]}`);
+      setIsScannerOpen(false);
+      return;
+    }
+
+    // 2. Try to find 8 continuous digits (DDMMYYYY)
+    const continuousPattern = /(\d{8})/;
+    const continuousMatch = text.match(continuousPattern);
+    if (continuousMatch) {
+      const clean = continuousMatch[1];
+      setScanExpiry(`${clean.slice(0, 2)}/${clean.slice(2, 4)}/${clean.slice(4, 8)}`);
+      setIsScannerOpen(false);
+    }
+  };
+
+  const handleExpiryChange = (val: string) => {
+    // Remove all non-digits
+    const clean = val.replace(/\D/g, "").slice(0, 8);
+    let formatted = clean;
+    if (clean.length >= 5) {
+      formatted = `${clean.slice(0, 2)}/${clean.slice(2, 4)}/${clean.slice(4, 8)}`;
+    } else if (clean.length >= 3) {
+      formatted = `${clean.slice(0, 2)}/${clean.slice(2, 4)}`;
+    }
+    setScanExpiry(formatted);
   };
 
   // Global listener for AIDC Barcode Toolkit / Hardware Scanners
@@ -130,7 +223,7 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
       const currentTime = Date.now();
       // If gap > 100ms, it's probably human typing, reset buffer
       if (currentTime - lastKeyTime > 100) buffer = "";
-      
+
       if (e.key === "Enter") {
         if (buffer.length > 1) {
           handleBarcodeScanned(buffer);
@@ -150,26 +243,26 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-4 bg-black/95 backdrop-blur-md">
       <motion.div key={session.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full h-full md:h-auto md:max-w-2xl bg-[#0a0a0a] border border-white/10 shadow-2xl flex flex-col overflow-hidden relative">
         <div className="px-4 py-4 bg-white/5 border-b border-white/10 flex items-center justify-between gap-4">
-           <button onClick={() => setIsSelectorOpen(!isSelectorOpen)} className="flex-1 flex items-center justify-between bg-black border border-white/10 px-4 py-3 group hover:border-[var(--primary)] transition-all">
-              <div className="flex items-center gap-3 overflow-hidden"><Store className="text-[var(--primary)] shrink-0" size={20} /><span className="text-sm font-black text-white uppercase tracking-tighter truncate">{currentIndex + 1}. {session.supermarket}</span></div>
-              <ChevronDown className={cn("text-gray-500 group-hover:text-white transition-transform", isSelectorOpen && "rotate-180")} size={20} />
-           </button>
-           <div className="flex items-center gap-1">
-              <button onClick={() => currentIndex > 0 && onSwitchSession(filteredSessions[currentIndex - 1])} disabled={currentIndex === 0} className="p-3 hover:bg-white/10 disabled:opacity-20 text-white transition-all"><ChevronLeft size={24} /></button>
-              <button onClick={() => currentIndex < filteredSessions.length - 1 && onSwitchSession(filteredSessions[currentIndex + 1])} disabled={currentIndex === filteredSessions.length - 1} className="p-3 hover:bg-white/10 disabled:opacity-20 text-white transition-all"><ChevronRight size={24} /></button>
-              <div className="w-[1px] h-6 bg-white/10 mx-2" />
-              <button onClick={onClose} className="p-3 hover:bg-red-500/20 text-gray-500 hover:text-red-500 transition-all rounded-full"><X size={24} /></button>
-           </div>
+          <button onClick={() => setIsSelectorOpen(!isSelectorOpen)} className="flex-1 flex items-center justify-between bg-black border border-white/10 px-4 py-3 group hover:border-[var(--primary)] transition-all">
+            <div className="flex items-center gap-3 overflow-hidden"><Store className="text-[var(--primary)] shrink-0" size={20} /><span className="text-sm font-black text-white uppercase tracking-tighter truncate">{currentIndex + 1}. {session.supermarket}</span></div>
+            <ChevronDown className={cn("text-gray-500 group-hover:text-white transition-transform", isSelectorOpen && "rotate-180")} size={20} />
+          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => currentIndex > 0 && onSwitchSession(filteredSessions[currentIndex - 1])} disabled={currentIndex === 0} className="p-3 hover:bg-white/10 disabled:opacity-20 text-white transition-all"><ChevronLeft size={24} /></button>
+            <button onClick={() => currentIndex < filteredSessions.length - 1 && onSwitchSession(filteredSessions[currentIndex + 1])} disabled={currentIndex === filteredSessions.length - 1} className="p-3 hover:bg-white/10 disabled:opacity-20 text-white transition-all"><ChevronRight size={24} /></button>
+            <div className="w-[1px] h-6 bg-white/10 mx-2" />
+            <button onClick={onClose} className="p-3 hover:bg-red-500/20 text-gray-500 hover:text-red-500 transition-all rounded-full"><X size={24} /></button>
+          </div>
         </div>
         <AnimatePresence>{isSelectorOpen && (<motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="absolute top-[80px] left-0 w-full bg-[#0a0a0a] z-[110] border-b border-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden"><div className="max-h-[60vh] overflow-y-auto">{filteredSessions.map((s, idx) => { const pCount = s.items.filter((i: any) => i.isPicked).length; const tCount = s.items.length; const percent = Math.round((pCount / tCount) * 100); const isCurrent = s.id === session.id; return (<button key={s.id} onClick={() => { onSwitchSession(s); setIsSelectorOpen(false); }} className={cn("w-full text-left px-6 py-6 border-b border-white/5 flex items-center justify-between transition-all active:bg-white/10", isCurrent ? "bg-[var(--primary)]/10 border-l-4 border-l-[var(--primary)]" : "hover:bg-white/[0.03] border-l-4 border-l-transparent")}><div className="flex flex-col gap-1"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Siêu thị {idx + 1}</span><span className={cn("text-lg font-black uppercase tracking-tight", isCurrent ? "text-[var(--primary)]" : "text-white")}>{s.supermarket}</span></div><div className="flex items-center gap-4"><div className="flex flex-col items-end"><span className="text-[10px] font-bold text-gray-500 uppercase">{pCount}/{tCount} MÓN</span><span className={cn("text-xl font-black", percent === 100 ? "text-green-500" : "text-[var(--accent)]")}>{percent}%</span></div><ChevronRight className="text-gray-700" size={20} /></div></button>); })}</div><button onClick={() => setIsSelectorOpen(false)} className="w-full py-4 bg-white/5 text-[10px] font-black uppercase tracking-[0.5em] text-gray-500 hover:text-white transition-all">Đóng danh sách</button></motion.div>)}</AnimatePresence>
         <div className="px-6 py-4 bg-white/[0.02] border-b border-white/5 flex items-center justify-between gap-6">
-           <div className="flex flex-col"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Tiến độ nhặt hàng:</span><div className="text-xl font-black text-white">{pickedCount}/{totalCount} <span className="text-[10px] text-gray-600 font-normal ml-2 tracking-widest">MÓN XONG</span></div></div>
-           <div className="flex flex-col items-end"><div className="flex items-center gap-6"><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-widest flex items-center gap-1"><Layers size={10} /> Tổng Số Kiện:</span><div className="text-lg font-black text-white">{totalPackages}</div></div><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--accent)] uppercase tracking-widest flex items-center gap-1"><Scale size={10} /> Tổng Trọng Lượng:</span><div className="text-lg font-black text-white">{totalWeightKg} <span className="text-[10px] text-gray-600">KG</span></div></div></div></div>
+          <div className="flex flex-col"><span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Tiến độ soạn hàng:</span><div className="text-xl font-black text-white">{pickedCount}/{totalCount} <span className="text-[10px] text-gray-600 font-normal ml-2 tracking-widest">MÓN XONG</span></div></div>
+          <div className="flex flex-col items-end"><div className="flex items-center gap-6"><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-widest flex items-center gap-1"><Layers size={10} /> Tổng Số Kiện:</span><div className="text-lg font-black text-white">{totalPackages}</div></div><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--accent)] uppercase tracking-widest flex items-center gap-1"><Scale size={10} /> Tổng Trọng Lượng:</span><div className="text-lg font-black text-white">{totalWeightKg} <span className="text-[10px] text-gray-600">KG</span></div></div></div></div>
         </div>
 
         {/* --- LARGE SCAN BUTTON / STATUS --- */}
         <div className="p-4 bg-black border-b border-white/10 flex justify-center">
-          <motion.button 
+          <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => {
@@ -203,12 +296,23 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
         </div>
         <div className="flex-1 overflow-y-auto max-h-[60vh] bg-black">
           <div className="space-y-0">
-              <div className="grid grid-cols-12 gap-2 px-4 py-3 text-[10px] font-black text-gray-600 uppercase tracking-widest border-b border-white/10 sticky top-0 bg-black z-10">
-                <div className="col-span-2 text-center">XÁC NHẬN</div>
-                <div className="col-span-6">SẢN PHẨM</div>
-                <div className="col-span-4 text-right">SỐ LƯỢNG</div>
-              </div>
-              {session.items.map((item: any) => (<PickingItemRow key={item.id} item={item} sessionId={session.id} onUpdateLocal={onUpdateLocal} />))}
+            <div className="grid grid-cols-12 gap-2 px-4 py-3 text-[10px] font-black text-gray-600 uppercase tracking-widest border-b border-white/10 sticky top-0 bg-black z-10">
+              <div className="col-span-2 text-center">XÁC NHẬN</div>
+              <div className="col-span-6">SẢN PHẨM</div>
+              <div className="col-span-4 text-right">SỐ LƯỢNG</div>
+            </div>
+            {session.items.map((item: any) => (
+              <PickingItemRow
+                key={item.id}
+                item={item}
+                sessionId={session.id}
+                onUpdateLocal={onUpdateLocal}
+                onItemClick={(clickedItem) => {
+                  setScannedItem(clickedItem);
+                  setScanQty(clickedItem.actualQty || "");
+                }}
+              />
+            ))}
           </div>
         </div>
         <div className="p-6 bg-white/5 border-t border-white/10 flex justify-between items-center">
@@ -219,9 +323,10 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
         {/* --- Barcode Scanner Overlay --- */}
         <AnimatePresence>
           {isScannerOpen && (
-            <BarcodeScanner 
-              onScanSuccess={handleBarcodeScanned} 
-              onClose={() => setIsScannerOpen(false)} 
+            <BarcodeScanner
+              mode={scannerMode}
+              onScanSuccess={scannerMode === "barcode" ? handleBarcodeScanned : handleOcrResult}
+              onClose={() => setIsScannerOpen(false)}
             />
           )}
         </AnimatePresence>
@@ -229,15 +334,15 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
         {/* --- Scanned Item Quantity Entry --- */}
         <AnimatePresence>
           {scannedItem && (
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }} 
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               className="absolute inset-0 z-[150] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6"
             >
-              <motion.div 
-                initial={{ scale: 0.9, y: 20 }} 
-                animate={{ scale: 1, y: 0 }} 
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
                 className="w-full max-w-sm bg-[#0f0f0f] border border-[var(--primary)] p-8 shadow-[0_0_50px_rgba(var(--primary-rgb),0.2)]"
               >
                 <div className="flex flex-col items-center text-center gap-4">
@@ -249,57 +354,65 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
                     <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">SKU: {scannedItem.sku}</span>
                     <span className="text-[10px] font-bold text-[var(--accent)] uppercase tracking-widest">CẦN: {scannedItem.quantity}</span>
                   </div>
-                  
+
                   <div className="w-full space-y-4">
-                    <div className="flex flex-col gap-2">
-                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-left">Nhập số lượng thực tế:</label>
-                      <input 
-                        autoFocus
-                        type="number" 
-                        value={scanQty} 
-                        onChange={(e) => setScanQty(e.target.value)}
-                        placeholder={scannedItem.quantity.toString()}
-                        className="w-full bg-black border-2 border-white/10 p-4 text-3xl font-black text-center text-[var(--primary)] outline-none focus:border-[var(--primary)] transition-all"
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-left">Số lượng:</label>
+                        <input
+                          autoFocus
+                          type="number"
+                          value={scanQty}
+                          onChange={(e) => setScanQty(e.target.value)}
+                          placeholder={scannedItem.quantity.toString()}
+                          className="w-full bg-black border-2 border-white/10 p-4 text-2xl font-black text-center text-[var(--primary)] outline-none focus:border-[var(--primary)] transition-all"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-left flex justify-between">
+                          <span>Hạn sử dụng (HSD):</span>
+                          <button
+                            onClick={() => { setScannerMode("ocr"); setIsScannerOpen(true); }}
+                            className="text-[var(--primary)] hover:text-white transition-colors flex items-center gap-1"
+                          >
+                            <ScanBarcode size={10} /> QUÉT
+                          </button>
+                        </label>
+                        <input
+                          type="text"
+                          value={scanExpiry}
+                          onChange={(e) => handleExpiryChange(e.target.value)}
+                          placeholder="dd/mm/yyyy"
+                          className="w-full bg-black border-2 border-white/10 p-4 text-sm font-mono font-bold text-center text-[var(--accent)] outline-none focus:border-[var(--accent)] transition-all"
+                        />
+                      </div>
                     </div>
-                    
+
                     <div className="flex gap-3">
-                      <button 
+                      <button
                         onClick={() => {
                           setScannedItem(null);
                           setScanQty("");
+                          setScanExpiry("");
                         }}
                         className="flex-1 py-4 bg-white/5 text-gray-400 font-black uppercase text-xs tracking-widest hover:bg-white/10 transition-all"
                       >
                         HỦY
                       </button>
-                      <button 
+                      <button
+                        disabled={isSubmitting}
                         onClick={async () => {
-                          const qty = scannedItem.quantity.toString();
-                          onUpdateLocal(scannedItem.id, qty, true);
-                          await updatePickingItem(scannedItem.id, session.id, qty, true);
+                          setIsSubmitting(true);
+                          const qty = parseInt(scanQty) || scannedItem.quantity;
+                          await addBatch(scannedItem.id, session.id, qty, scanExpiry);
                           setScannedItem(null);
                           setScanQty("");
+                          setScanExpiry("");
+                          setIsSubmitting(false);
                         }}
-                        className="flex-2 py-4 bg-white/10 text-white font-black uppercase text-xs tracking-widest hover:bg-white/20 transition-all border border-white/10"
+                        className="flex-3 py-4 bg-[var(--primary)] text-black font-black uppercase text-xs tracking-widest hover:brightness-110 transition-all shadow-[0_0_20px_rgba(var(--primary-rgb),0.4)] disabled:opacity-50"
                       >
-                        LẤY ĐỦ
-                      </button>
-                      <button 
-                        onClick={async () => {
-                          const currentActual = parseInt(scannedItem.actualQty || "0");
-                          const qty = scanQty || (currentActual + 1).toString();
-                          const qtyNum = parseInt(qty);
-                          const isFullyPicked = qtyNum >= scannedItem.quantity;
-                          
-                          onUpdateLocal(scannedItem.id, qty, isFullyPicked);
-                          await updatePickingItem(scannedItem.id, session.id, qty, isFullyPicked);
-                          setScannedItem(null);
-                          setScanQty("");
-                        }}
-                        className="flex-3 py-4 bg-[var(--primary)] text-black font-black uppercase text-xs tracking-widest hover:brightness-110 transition-all shadow-[0_0_20px_rgba(var(--primary-rgb),0.4)]"
-                      >
-                        XÁC NHẬN
+                        {isSubmitting ? <RefreshCw className="animate-spin mx-auto" size={16} /> : "XÁC NHẬN LÔ"}
                       </button>
                     </div>
                   </div>
@@ -337,9 +450,9 @@ const SummaryTable = ({ items }: { items: any[] }) => {
     items.forEach(item => {
       const key = item.productName;
       if (!map.has(key)) {
-        map.set(key, { 
-          name: item.productName, 
-          sku: item.sku, 
+        map.set(key, {
+          name: item.productName,
+          sku: item.sku,
           specs: parseFloat(item.specs) || 1,
           totalQty: 0,
           totalWeight: 0
@@ -501,14 +614,14 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
         if (!hasItem) return session;
 
         // Update the item
-        const updatedItems = session.items.map((i: any) => 
+        const updatedItems = session.items.map((i: any) =>
           i.id === itemId ? { ...i, actualQty: qty, isPicked: picked } : i
         );
 
         // Recalculate Session Status Automatically
         const total = updatedItems.length;
         const pickedCount = updatedItems.filter((i: any) => i.isPicked).length;
-        
+
         let newStatus = "PENDING";
         if (pickedCount === total && total > 0) {
           newStatus = "COMPLETED";
@@ -517,7 +630,7 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
         }
 
         const updatedSession = { ...session, items: updatedItems, status: newStatus };
-        
+
         // If this is the active session in modal, update it too
         if (activeSession && activeSession.id === session.id) {
           setActiveSession(updatedSession);
@@ -565,27 +678,27 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
   };
 
   const columns = [
-    { 
-      id: "PENDING", 
-      title: "Chưa soạn", 
-      icon: Clock, 
-      color: "text-gray-400", 
+    {
+      id: "PENDING",
+      title: "Chưa soạn",
+      icon: Clock,
+      color: "text-gray-400",
       border: "border-gray-500/20",
       glowColor: "rgba(156, 163, 175, 0.8)"
     },
-    { 
-      id: "PROCESSING", 
-      title: "Đang soạn", 
-      icon: Play, 
-      color: "text-[var(--primary)]", 
+    {
+      id: "PROCESSING",
+      title: "Đang soạn",
+      icon: Play,
+      color: "text-[var(--primary)]",
       border: "border-[var(--primary)]/20",
       glowColor: "rgba(0, 242, 255, 0.8)"
     },
-    { 
-      id: "COMPLETED", 
-      title: "Hoàn tất", 
-      icon: CheckCircle, 
-      color: "text-green-500", 
+    {
+      id: "COMPLETED",
+      title: "Hoàn tất",
+      icon: CheckCircle,
+      color: "text-green-500",
       border: "border-green-500/20",
       glowColor: "rgba(34, 197, 94, 0.8)"
     },
@@ -603,8 +716,8 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
             <ClipboardList size={16} /> Tổng hợp số lượng
           </button>
         </div>
-        <button 
-          onClick={handleSync} 
+        <button
+          onClick={handleSync}
           className="w-[46px] h-[46px] rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center flex-shrink-0 transition-all hover:scale-105 active:scale-95 shadow-lg"
           title="Đồng bộ dữ liệu từ Google Sheets"
         >
@@ -618,7 +731,7 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
             <input type="text" placeholder="Tìm kiếm tên siêu thị..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-black border border-white/10 pl-10 pr-4 py-3 text-[10px] uppercase tracking-widest text-white focus:border-[var(--primary)] outline-none" />
           </div>
-          
+
           <div className="flex flex-wrap gap-2">
             <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest w-full mb-1 flex items-center gap-2"><Filter size={10} /> Chọn ngày soạn:</span>
             {availableDates.map(date => (
@@ -657,7 +770,7 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
                       <div className="flex flex-col items-start">
                         <h3 className="text-[10px] font-black uppercase text-white tracking-[0.2em]">{col.title}</h3>
                         {!isExpanded && (
-                          <span 
+                          <span
                             className={cn("text-xs font-black md:hidden", col.color)}
                             style={{ textShadow: `0 0 10px ${col.glowColor}` }}
                           >
@@ -667,13 +780,13 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                       <span 
+                      <span
                         className={cn("text-lg font-black hidden md:block", col.color)}
                         style={{ textShadow: `0 0 12px ${col.glowColor}` }}
-                       >
-                         {colSessions.length}
-                       </span>
-                       <div className="md:hidden">{isExpanded ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}</div>
+                      >
+                        {colSessions.length}
+                      </span>
+                      <div className="md:hidden">{isExpanded ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}</div>
                     </div>
                   </button>
                   <div className={cn("flex-1 md:block transition-all overflow-hidden", isExpanded ? "block h-auto" : "hidden h-0 md:h-auto")}>
@@ -695,11 +808,11 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
 
       <AnimatePresence>
         {activeSession && (
-          <PickingModal 
-            session={activeSession} 
+          <PickingModal
+            session={activeSession}
             filteredSessions={filteredSessions}
-            onClose={() => setActiveSession(null)} 
-            onUpdateLocal={updateItemLocally} 
+            onClose={() => setActiveSession(null)}
+            onUpdateLocal={updateItemLocally}
             onSwitchSession={setActiveSession}
           />
         )}

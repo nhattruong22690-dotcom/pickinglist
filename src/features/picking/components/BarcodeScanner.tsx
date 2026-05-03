@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { X, Zap, Keyboard } from "lucide-react";
+import { X, Zap, Keyboard, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { createWorker } from "tesseract.js";
 
 // Polyfill: import barcode-detector which provides native API or WASM fallback
 import { BarcodeDetector as BarcodeDetectorPolyfill } from "barcode-detector";
@@ -10,28 +11,27 @@ import { BarcodeDetector as BarcodeDetectorPolyfill } from "barcode-detector";
 interface BarcodeScannerProps {
   onScanSuccess: (decodedText: string) => void;
   onClose: () => void;
+  mode?: "barcode" | "ocr";
 }
 
 // Beep sound as tiny inline audio (no external fetch = instant)
-const BEEP_FREQ = 1800;
-const BEEP_DURATION = 60;
 const playBeep = () => {
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "square";
-    osc.frequency.value = BEEP_FREQ;
+    osc.frequency.value = 1800;
     gain.gain.value = 0.08;
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start();
-    osc.stop(ctx.currentTime + BEEP_DURATION / 1000);
+    osc.stop(ctx.currentTime + 60 / 1000);
     setTimeout(() => ctx.close(), 200);
   } catch { /* silent */ }
 };
 
-export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) => {
+export const BarcodeScanner = ({ onScanSuccess, onClose, mode = "barcode" }: BarcodeScannerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -49,20 +49,55 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
   const [torchSupported, setTorchSupported] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [manualCode, setManualCode] = useState("");
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
 
   const onScanRef = useRef(onScanSuccess);
   onScanRef.current = onScanSuccess;
 
+  // --- OCR Functionality ---
+  const handleCaptureAndOcr = async () => {
+    if (!videoRef.current || !canvasRef.current || isOcrProcessing) return;
+    
+    setIsOcrProcessing(true);
+    try {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      // Match canvas to video dimensions
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      // Draw frame to canvas
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // OCR processing
+      const worker = await createWorker('eng');
+      const { data: { text } } = await worker.recognize(canvas);
+      await worker.terminate();
+      
+      if (text && text.trim()) {
+        playBeep();
+        onScanRef.current(text);
+      }
+    } catch (err) {
+      console.error("OCR Error:", err);
+    } finally {
+      setIsOcrProcessing(false);
+    }
+  };
+
   // --- CORE: Start camera & detection loop ---
   const startCamera = useCallback(async () => {
     try {
-      // 1. Get camera stream — optimized constraints for barcode scanning
+      // 1. Get camera stream
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: "environment",
           width: { ideal: 1280 },
           height: { ideal: 720 },
-          // @ts-ignore — advanced constraints for iOS autofocus
+          // @ts-ignore
           focusMode: { ideal: "continuous" },
         },
         audio: false,
@@ -76,15 +111,6 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
       const caps = track.getCapabilities?.() as any;
       if (caps?.torch) setTorchSupported(true);
 
-      // Apply continuous focus if supported
-      try {
-        // @ts-ignore
-        if (caps?.focusMode?.includes("continuous")) {
-          // @ts-ignore
-          await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
-        }
-      } catch { /* ignore */ }
-
       // 2. Attach to video element
       const video = videoRef.current!;
       video.srcObject = stream;
@@ -92,37 +118,35 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
       video.setAttribute("autoplay", "true");
       await video.play();
 
-      // 3. Create BarcodeDetector
-      const Detector = (window as any).BarcodeDetector || BarcodeDetectorPolyfill;
-      detectorRef.current = new Detector({
-        formats: ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"],
-      });
+      // 3. Mode handling
+      if (mode === "barcode") {
+        const Detector = (window as any).BarcodeDetector || BarcodeDetectorPolyfill;
+        detectorRef.current = new Detector({
+          formats: ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"],
+        });
+        detectLoop();
+      }
 
       if (mountedRef.current) {
         setIsReady(true);
         setError(null);
       }
-
-      // 4. Start detection loop
-      detectLoop();
     } catch (err: any) {
       if (!mountedRef.current) return;
       const msg = err?.name || err?.message || "";
       if (msg.includes("NotAllowed") || msg.includes("Permission")) {
         setError("Chưa cấp quyền Camera. Vào Cài đặt > Safari > Camera và bật quyền.");
-      } else if (msg.includes("NotFound")) {
-        setError("Không tìm thấy camera.");
       } else {
-        setError("Không thể mở camera. Thử đóng các ứng dụng khác đang dùng camera.");
+        setError("Không thể mở camera.");
       }
     }
-  }, []);
+  }, [mode]);
 
-  // --- Detection loop: runs every frame ---
+  // --- Detection loop for barcodes ---
   const detectLoop = useCallback(() => {
     const video = videoRef.current;
     const detector = detectorRef.current;
-    if (!video || !detector || !mountedRef.current) return;
+    if (!video || !detector || !mountedRef.current || mode !== "barcode") return;
 
     const tick = async () => {
       if (!mountedRef.current || video.readyState < 2) {
@@ -136,27 +160,20 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
           const code = barcodes[0].rawValue;
           const now = Date.now();
 
-          // Anti-duplicate: ignore same code within 1 second
           if (code !== lastCodeRef.current || now - lastTimeRef.current > 1000) {
             lastCodeRef.current = code;
             lastTimeRef.current = now;
 
-            // Visual feedback
             setLastScanned(code);
             setFlashBorder(true);
             setTimeout(() => mountedRef.current && setFlashBorder(false), 150);
 
-            // Haptic feedback
             if (navigator.vibrate) navigator.vibrate(50);
             playBeep();
-
-            // Callback
             onScanRef.current(code);
           }
         }
-      } catch {
-        // BarcodeDetector.detect can throw on invalid frames — ignore
-      }
+      } catch { /* ignore */ }
 
       if (mountedRef.current) {
         rafRef.current = requestAnimationFrame(tick);
@@ -164,7 +181,7 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
     };
 
     rafRef.current = requestAnimationFrame(tick);
-  }, []);
+  }, [mode]);
 
   // --- Torch toggle ---
   const toggleTorch = useCallback(async () => {
@@ -202,42 +219,24 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
   };
 
   return (
-    <div
-      className={cn(
-        "fixed inset-0 z-[200] bg-black flex flex-col transition-all duration-100",
-        flashBorder && "ring-4 ring-inset ring-green-400"
-      )}
-    >
-      {/* Camera viewport — fullscreen */}
+    <div className={cn("fixed inset-0 z-[200] bg-black flex flex-col transition-all duration-100", flashBorder && "ring-4 ring-inset ring-green-400")}>
       <div className="flex-1 relative overflow-hidden bg-black">
-        <video
-          ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover"
-          playsInline
-          autoPlay
-          muted
-        />
+        <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline autoPlay muted />
         <canvas ref={canvasRef} className="hidden" />
 
         {/* Scan frame overlay */}
         {isReady && (
           <div className="absolute inset-0 pointer-events-none">
-            {/* Dim areas outside scan zone */}
             <div className="absolute inset-0 flex flex-col">
               <div className="flex-[3] bg-black/40" />
               <div className="flex-[2] flex">
                 <div className="w-[6%] bg-black/40" />
                 <div className="flex-1 relative">
-                  {/* Corner brackets */}
                   <div className="absolute -top-[1px] -left-[1px] w-7 h-7 border-t-[3px] border-l-[3px] border-green-400 rounded-tl-sm" />
                   <div className="absolute -top-[1px] -right-[1px] w-7 h-7 border-t-[3px] border-r-[3px] border-green-400 rounded-tr-sm" />
                   <div className="absolute -bottom-[1px] -left-[1px] w-7 h-7 border-b-[3px] border-l-[3px] border-green-400 rounded-bl-sm" />
                   <div className="absolute -bottom-[1px] -right-[1px] w-7 h-7 border-b-[3px] border-r-[3px] border-green-400 rounded-br-sm" />
-
-                  {/* Laser line */}
-                  <div
-                    className="absolute left-2 right-2 h-[2px] bg-red-500 shadow-[0_0_8px_2px_rgba(239,68,68,0.6)] animate-[laserScan_1.5s_ease-in-out_infinite]"
-                  />
+                  <div className={cn("absolute left-2 right-2 h-[2px] bg-red-500 shadow-[0_0_8px_2px_rgba(239,68,68,0.6)] animate-[laserScan_1.5s_ease-in-out_infinite]", mode === "ocr" && "bg-blue-500 shadow-[0_0_8px_2px_rgba(59,130,246,0.6)]")} />
                 </div>
                 <div className="w-[6%] bg-black/40" />
               </div>
@@ -246,101 +245,61 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
           </div>
         )}
 
-        {/* Loading */}
-        {!isReady && !error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black">
-            <div className="w-10 h-10 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+        {/* OCR Capture Button */}
+        {isReady && mode === "ocr" && (
+          <div className="absolute bottom-10 left-0 w-full flex justify-center pointer-events-auto">
+             <button 
+               onClick={handleCaptureAndOcr}
+               disabled={isOcrProcessing}
+               className="w-20 h-20 bg-white/20 backdrop-blur-xl border-4 border-white/40 rounded-full flex items-center justify-center text-white active:scale-90 transition-all shadow-2xl relative"
+             >
+               {isOcrProcessing ? (
+                 <RefreshCw size={32} className="animate-spin" />
+               ) : (
+                 <div className="w-14 h-14 bg-white rounded-full" />
+               )}
+               {isOcrProcessing && <div className="absolute -top-12 bg-black/80 px-3 py-1 rounded-sm text-[10px] font-black uppercase tracking-widest text-[var(--primary)]">Đang xử lý OCR...</div>}
+             </button>
           </div>
         )}
 
-        {/* Error */}
         {error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black p-8 gap-5">
-            <p className="text-sm font-bold text-red-400 text-center leading-relaxed">{error}</p>
-            <button
-              onClick={() => { setError(null); setIsReady(false); startCamera(); }}
-              className="px-8 py-3 bg-green-500 text-black text-xs font-black uppercase tracking-widest rounded-sm"
-            >
-              Thử lại
-            </button>
+            <p className="text-sm font-bold text-red-400 text-center">{error}</p>
+            <button onClick={() => { setError(null); setIsReady(false); startCamera(); }} className="px-8 py-3 bg-green-500 text-black text-xs font-black uppercase tracking-widest rounded-sm">Thử lại</button>
           </div>
         )}
 
-        {/* Close button — top right */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 z-10 w-10 h-10 bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center text-white/80 active:scale-90 transition-transform"
-        >
-          <X size={20} />
-        </button>
+        <button onClick={onClose} className="absolute top-4 right-4 z-10 w-10 h-10 bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center text-white/80 active:scale-90 transition-transform"><X size={20} /></button>
       </div>
 
-      {/* Bottom bar — minimal */}
       <div className="bg-black/95 border-t border-white/5 px-4 pt-3 pb-6 space-y-3">
-        {/* Last scanned code */}
         <div className="flex items-center justify-between min-h-[28px]">
           <div className="flex-1 overflow-hidden">
-            {lastScanned ? (
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse flex-shrink-0" />
-                <span className="text-sm font-mono font-bold text-green-400 truncate">{lastScanned}</span>
-              </div>
-            ) : (
-              <span className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">Đưa mã vạch vào khung hình</span>
-            )}
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">
+              {mode === "barcode" ? "Đưa mã vạch vào khung hình" : "Đưa hạn sử dụng vào khung và bấm nút chụp"}
+            </span>
           </div>
-
-          {/* Action buttons */}
           <div className="flex items-center gap-2 flex-shrink-0 ml-3">
             {torchSupported && (
-              <button
-                onClick={toggleTorch}
-                className={cn(
-                  "w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90",
-                  torchOn ? "bg-yellow-400 text-black" : "bg-white/10 text-white/60"
-                )}
-              >
-                <Zap size={16} />
-              </button>
+              <button onClick={toggleTorch} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90", torchOn ? "bg-yellow-400 text-black" : "bg-white/10 text-white/60")}><Zap size={16} /></button>
             )}
-            <button
-              onClick={() => setShowManual(!showManual)}
-              className={cn(
-                "w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90",
-                showManual ? "bg-green-400 text-black" : "bg-white/10 text-white/60"
-              )}
-            >
-              <Keyboard size={16} />
-            </button>
+            <button onClick={() => setShowManual(!showManual)} className={cn("w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90", showManual ? "bg-green-400 text-black" : "bg-white/10 text-white/60")}><Keyboard size={16} /></button>
           </div>
         </div>
 
-        {/* Manual input — toggle */}
         {showManual && (
           <form onSubmit={handleManualSubmit} className="flex gap-2">
-            <input
-              autoFocus
-              type="text"
-              placeholder="Nhập mã vạch..."
-              value={manualCode}
-              onChange={(e) => setManualCode(e.target.value)}
-              className="flex-1 bg-white/5 border border-white/10 px-3 py-2.5 text-sm font-mono text-white outline-none focus:border-green-400 transition-all rounded-sm"
-            />
-            <button
-              type="submit"
-              className="px-5 bg-green-500 text-black text-xs font-black uppercase tracking-widest rounded-sm active:scale-95 transition-transform"
-            >
-              OK
-            </button>
+            <input autoFocus type="text" placeholder="Nhập thủ công..." value={manualCode} onChange={(e) => setManualCode(e.target.value)} className="flex-1 bg-white/5 border border-white/10 px-3 py-2.5 text-sm font-mono text-white outline-none focus:border-green-400 transition-all rounded-sm" />
+            <button type="submit" className="px-5 bg-green-500 text-black text-xs font-black uppercase tracking-widest rounded-sm">OK</button>
           </form>
         )}
       </div>
 
-      {/* Laser animation keyframes */}
       <style jsx>{`
         @keyframes laserScan {
-          0%, 100% { top: 10%; }
-          50% { top: 88%; }
+          0%, 100% { top: 35%; opacity: 0.8; }
+          50% { top: 60%; opacity: 1; }
         }
       `}</style>
     </div>
