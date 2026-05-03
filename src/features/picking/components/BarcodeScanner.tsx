@@ -50,39 +50,85 @@ export const BarcodeScanner = ({ onScanSuccess, onClose, mode = "barcode" }: Bar
   const [showManual, setShowManual] = useState(false);
   const [manualCode, setManualCode] = useState("");
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [ocrFeedback, setOcrFeedback] = useState<string | null>(null);
+  const workerRef = useRef<any>(null);
 
   const onScanRef = useRef(onScanSuccess);
   onScanRef.current = onScanSuccess;
 
-  // --- OCR Functionality ---
+  // --- OCR: Init worker once ---
+  useEffect(() => {
+    if (mode === "ocr") {
+      (async () => {
+        try {
+          const w = await createWorker("eng");
+          workerRef.current = w;
+        } catch (e) { console.error("Tesseract init error", e); }
+      })();
+    }
+    return () => { workerRef.current?.terminate(); workerRef.current = null; };
+  }, [mode]);
+
+  // --- OCR: Capture, crop, preprocess, recognize ---
   const handleCaptureAndOcr = async () => {
     if (!videoRef.current || !canvasRef.current || isOcrProcessing) return;
-    
+    if (!workerRef.current) { setOcrFeedback("Đang tải OCR, vui lòng chờ..."); return; }
+
     setIsOcrProcessing(true);
+    setOcrFeedback(null);
     try {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      // Match canvas to video dimensions
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      
-      // Draw frame to canvas
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      // OCR processing
-      const worker = await createWorker('eng');
-      const { data: { text } } = await worker.recognize(canvas);
-      await worker.terminate();
-      
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+
+      // Crop only the scan region (center 88% width, middle band)
+      const cropX = Math.floor(vw * 0.06);
+      const cropY = Math.floor(vh * 0.375);
+      const cropW = Math.floor(vw * 0.88);
+      const cropH = Math.floor(vh * 0.25);
+
+      canvas.width = cropW;
+      canvas.height = cropH;
+      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+      // Preprocess: grayscale + high contrast
+      const imgData = ctx.getImageData(0, 0, cropW, cropH);
+      const d = imgData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const gray = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+        const bw = gray > 128 ? 255 : 0; // binarize
+        d[i] = d[i + 1] = d[i + 2] = bw;
+      }
+      ctx.putImageData(imgData, 0, 0);
+
+      const { data: { text } } = await workerRef.current.recognize(canvas);
+
       if (text && text.trim()) {
-        playBeep();
-        onScanRef.current(text);
+        // Try to extract date pattern
+        const dateMatch = text.match(/(\d{2})[\/\-\.\s](\d{2})[\/\-\.\s](\d{2,4})/);
+        const contMatch = text.match(/(\d{6,8})/);
+
+        if (dateMatch) {
+          playBeep();
+          onScanRef.current(text);
+          setOcrFeedback(null);
+        } else if (contMatch) {
+          playBeep();
+          onScanRef.current(text);
+          setOcrFeedback(null);
+        } else {
+          setOcrFeedback(`Không tìm thấy ngày. OCR đọc: "${text.trim().slice(0, 40)}"`);
+        }
+      } else {
+        setOcrFeedback("Không đọc được ký tự. Hãy đưa HSD gần camera hơn.");
       }
     } catch (err) {
       console.error("OCR Error:", err);
+      setOcrFeedback("Lỗi xử lý OCR. Thử lại.");
     } finally {
       setIsOcrProcessing(false);
     }
@@ -247,7 +293,12 @@ export const BarcodeScanner = ({ onScanSuccess, onClose, mode = "barcode" }: Bar
 
         {/* OCR Capture Button */}
         {isReady && mode === "ocr" && (
-          <div className="absolute bottom-10 left-0 w-full flex justify-center pointer-events-auto">
+          <div className="absolute bottom-10 left-0 w-full flex flex-col items-center gap-3 pointer-events-auto">
+             {ocrFeedback && (
+               <div className="bg-red-500/90 backdrop-blur-sm px-4 py-2 rounded-lg max-w-[80%] text-center">
+                 <span className="text-[11px] font-bold text-white">{ocrFeedback}</span>
+               </div>
+             )}
              <button 
                onClick={handleCaptureAndOcr}
                disabled={isOcrProcessing}
