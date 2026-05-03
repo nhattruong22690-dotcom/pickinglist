@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { X, Zap, Keyboard, RefreshCw } from "lucide-react";
+import { X, Zap, Keyboard, RefreshCw, Camera } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { ocrExpiryDate } from "@/features/picking/actions/picking";
+import { createWorker } from "tesseract.js";
 
 // Polyfill: import barcode-detector which provides native API or WASM fallback
 import { BarcodeDetector as BarcodeDetectorPolyfill } from "barcode-detector";
@@ -40,6 +40,7 @@ export const BarcodeScanner = ({ onScanSuccess, onClose, mode = "barcode" }: Bar
   const lastCodeRef = useRef<string>("");
   const lastTimeRef = useRef<number>(0);
   const mountedRef = useRef(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,51 +52,60 @@ export const BarcodeScanner = ({ onScanSuccess, onClose, mode = "barcode" }: Bar
   const [manualCode, setManualCode] = useState("");
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [ocrFeedback, setOcrFeedback] = useState<string | null>(null);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
 
   const onScanRef = useRef(onScanSuccess);
   onScanRef.current = onScanSuccess;
 
-  // --- OCR: Capture photo & send to Google Cloud Vision ---
-  const handleCaptureAndOcr = async () => {
-    if (!videoRef.current || !canvasRef.current || isOcrProcessing) return;
+  // --- OCR: Process photo from native camera ---
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || isOcrProcessing) return;
 
     setIsOcrProcessing(true);
     setOcrFeedback(null);
+    setCapturedImage(null);
+
     try {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
+      // Show captured image as preview
+      const imageUrl = URL.createObjectURL(file);
+      setCapturedImage(imageUrl);
 
-      // Capture full resolution frame
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
+      // Create image bitmap for Tesseract
+      const worker = await createWorker("eng+vie");
+      const { data: { text } } = await worker.recognize(file);
+      await worker.terminate();
 
-      // Convert to base64 (JPEG, quality 0.85 to reduce size)
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-      const base64 = dataUrl.split(",")[1];
+      if (text && text.trim()) {
+        const patterns = [
+          /(\d{2})[\/\-\.\s:]+(\d{2})[\/\-\.\s:]+(\d{4})/,
+          /(\d{2})[\/\-\.\s:]+(\d{2})[\/\-\.\s:]+(\d{2})(?!\d)/,
+          /(\d{8})/,
+          /(\d{6})(?!\d)/,
+        ];
 
-      // Send to server for Cloud Vision OCR
-      const result = await ocrExpiryDate(base64);
-
-      if (result.success && result.date) {
-        playBeep();
-        if (navigator.vibrate) navigator.vibrate(200);
-        onScanRef.current(result.date);
-        setOcrFeedback(null);
-      } else if (result.rawText) {
-        setOcrFeedback(`Không tìm thấy ngày. Đọc được: "${result.rawText}"`);
-      } else if (result.error) {
-        setOcrFeedback(`Lỗi: ${result.error.slice(0, 60)}`);
+        for (const p of patterns) {
+          const m = text.match(p);
+          if (m) {
+            playBeep();
+            if (navigator.vibrate) navigator.vibrate(200);
+            onScanRef.current(m[0]);
+            setOcrFeedback(null);
+            setCapturedImage(null);
+            return;
+          }
+        }
+        setOcrFeedback(`Không tìm thấy ngày. Hãy đọc ảnh và nhập thủ công bên dưới.`);
       } else {
-        setOcrFeedback("Không đọc được ký tự. Đưa HSD gần hơn và chụp lại.");
+        setOcrFeedback("Không đọc được. Hãy chụp rõ hơn hoặc nhập thủ công.");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("OCR Error:", err);
-      setOcrFeedback("Lỗi kết nối server. Thử lại.");
+      setOcrFeedback("Lỗi xử lý. Hãy nhập thủ công bên dưới.");
     } finally {
       setIsOcrProcessing(false);
+      // Reset input to allow re-capture
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -256,26 +266,50 @@ export const BarcodeScanner = ({ onScanSuccess, onClose, mode = "barcode" }: Bar
           </div>
         )}
 
-        {/* OCR Capture Button */}
+        {/* OCR: Native Camera + Preview + Manual Input */}
         {isReady && mode === "ocr" && (
-          <div className="absolute bottom-10 left-0 w-full flex flex-col items-center gap-3 pointer-events-auto">
-             {ocrFeedback && (
-               <div className="bg-red-500/90 backdrop-blur-sm px-4 py-2 rounded-lg max-w-[80%] text-center">
-                 <span className="text-[11px] font-bold text-white">{ocrFeedback}</span>
-               </div>
-             )}
-             <button 
-               onClick={handleCaptureAndOcr}
-               disabled={isOcrProcessing}
-               className="w-20 h-20 bg-white/20 backdrop-blur-xl border-4 border-white/40 rounded-full flex items-center justify-center text-white active:scale-90 transition-all shadow-2xl relative"
-             >
-               {isOcrProcessing ? (
-                 <RefreshCw size={32} className="animate-spin" />
-               ) : (
-                 <div className="w-14 h-14 bg-white rounded-full" />
-               )}
-               {isOcrProcessing && <div className="absolute -top-12 bg-black/80 px-3 py-1 rounded-sm text-[10px] font-black uppercase tracking-widest text-[var(--primary)]">Đang xử lý OCR...</div>}
-             </button>
+          <div className="absolute bottom-0 left-0 w-full flex flex-col items-center pointer-events-auto">
+            {/* Captured image preview */}
+            {capturedImage && (
+              <div className="w-full px-4 mb-3">
+                <div className="bg-black/80 backdrop-blur-sm rounded-lg overflow-hidden border border-white/20">
+                  <img src={capturedImage} alt="Ảnh đã chụp" className="w-full max-h-[30vh] object-contain" />
+                  <p className="text-[9px] text-center text-gray-400 py-1">Đọc HSD từ ảnh và nhập bên dưới</p>
+                </div>
+              </div>
+            )}
+
+            {/* Feedback */}
+            {ocrFeedback && (
+              <div className="bg-orange-500/90 backdrop-blur-sm px-4 py-2 rounded-lg max-w-[80%] text-center mb-3">
+                <span className="text-[11px] font-bold text-white">{ocrFeedback}</span>
+              </div>
+            )}
+
+            {/* Processing indicator */}
+            {isOcrProcessing && (
+              <div className="flex items-center gap-2 bg-black/80 px-4 py-2 rounded-lg mb-3">
+                <RefreshCw size={14} className="animate-spin text-[var(--primary)]" />
+                <span className="text-[11px] font-bold text-white">Đang nhận diện HSD...</span>
+              </div>
+            )}
+
+            {/* Camera button + Manual input */}
+            <div className="w-full bg-black/95 border-t border-white/10 px-4 py-4 space-y-3">
+              <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoCapture} className="hidden" />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isOcrProcessing}
+                className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-500 text-white font-black uppercase text-xs tracking-widest rounded-lg flex items-center justify-center gap-3 active:scale-95 transition-all shadow-lg disabled:opacity-50"
+              >
+                <Camera size={20} />
+                CHỤP ẢNH HẠN SỬ DỤNG
+              </button>
+              <form onSubmit={(e) => { e.preventDefault(); if (manualCode.trim()) { onScanSuccess(manualCode.trim()); setManualCode(""); } }} className="flex gap-2">
+                <input type="text" placeholder="Hoặc nhập HSD thủ công (vd: 01102026)" value={manualCode} onChange={(e) => setManualCode(e.target.value)} className="flex-1 bg-white/5 border border-white/10 px-3 py-3 text-sm font-mono text-white outline-none focus:border-blue-400 transition-all rounded-lg" />
+                <button type="submit" className="px-5 bg-blue-500 text-white text-xs font-black uppercase tracking-widest rounded-lg">OK</button>
+              </form>
+            </div>
           </div>
         )}
 

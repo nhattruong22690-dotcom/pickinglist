@@ -3,52 +3,7 @@
 import { getGoogleSheetsClient, SHEET_ID } from "@/server/lib/google-sheets";
 import { revalidatePath } from "next/cache";
 import { v4 as uuidv4 } from "uuid";
-import { google } from "googleapis";
 
-// --- OCR: Google Cloud Vision API ---
-export async function ocrExpiryDate(imageBase64: string) {
-  try {
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-      },
-      scopes: ["https://www.googleapis.com/auth/cloud-vision"],
-    });
-
-    const vision = google.vision({ version: "v1", auth });
-
-    const result = await vision.images.annotate({
-      requestBody: {
-        requests: [{
-          image: { content: imageBase64 },
-          features: [{ type: "TEXT_DETECTION" }],
-        }],
-      },
-    });
-
-    const text = result.data.responses?.[0]?.fullTextAnnotation?.text || "";
-    if (!text.trim()) return { success: false, date: null, rawText: "" };
-
-    // Try multiple date patterns
-    const patterns = [
-      /(\d{2})[\/\-\.\s](\d{2})[\/\-\.\s](\d{4})/,     // DD/MM/YYYY
-      /(\d{2})[\/\-\.\s](\d{2})[\/\-\.\s](\d{2})(?!\d)/, // DD/MM/YY
-      /(\d{8})/,                                           // DDMMYYYY
-      /(\d{6})(?!\d)/,                                     // DDMMYY
-    ];
-
-    for (const p of patterns) {
-      const m = text.match(p);
-      if (m) return { success: true, date: m[0], rawText: text };
-    }
-
-    return { success: false, date: null, rawText: text.trim().slice(0, 80) };
-  } catch (error: any) {
-    console.error("Vision API Error:", error);
-    return { success: false, date: null, rawText: "", error: error.message };
-  }
-}
 
 async function getSheetData(range: string) {
   try {
