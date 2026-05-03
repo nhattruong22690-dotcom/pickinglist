@@ -97,6 +97,54 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
   const [scannedItem, setScannedItem] = useState<any | null>(null);
   const [scanQty, setScanQty] = useState("");
   const [scanWarning, setScanWarning] = useState<string | null>(null);
+  const handleBarcodeScanned = (code: string) => {
+    const matched = session.items.find((i: any) => 
+      (i.barcode && i.barcode.toString().trim() === code.trim()) || 
+      (i.sku && i.sku.toString().trim() === code.trim())
+    );
+
+    if (matched) {
+      setScannedItem(matched);
+      setIsScannerOpen(false);
+      setScanWarning(null);
+      try { new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3").play(); } catch(e) {}
+      if (navigator.vibrate) navigator.vibrate(200);
+    } else {
+      const availableCodes = session.items.map((i: any) => i.barcode || i.sku).filter(Boolean).join(", ");
+      setScanWarning(`Mã "${code}" không có trong đơn của ${session.supermarket}!\n\nCác mã đang chờ: ${availableCodes || 'Không có mã'}`);
+      try { new Audio("https://assets.mixkit.co/active_storage/sfx/2859/2859-preview.mp3").play(); } catch(e) {}
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    }
+  };
+
+  // Global listener for AIDC Barcode Toolkit / Hardware Scanners
+  useEffect(() => {
+    let buffer = "";
+    let lastKeyTime = Date.now();
+
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Ignore if typing in an input already
+      if (e.target instanceof HTMLInputElement) return;
+      if (scannedItem) return; // Don't scan if modal is already open
+
+      const currentTime = Date.now();
+      // If gap > 100ms, it's probably human typing, reset buffer
+      if (currentTime - lastKeyTime > 100) buffer = "";
+      
+      if (e.key === "Enter") {
+        if (buffer.length > 1) {
+          handleBarcodeScanned(buffer);
+          buffer = "";
+        }
+      } else if (e.key.length === 1) {
+        buffer += e.key;
+      }
+      lastKeyTime = currentTime;
+    };
+
+    window.addEventListener("keydown", handleKeyPress);
+    return () => window.removeEventListener("keydown", handleKeyPress);
+  }, [session, scannedItem]);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-4 bg-black/95 backdrop-blur-md">
@@ -119,30 +167,28 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
            <div className="flex flex-col items-end"><div className="flex items-center gap-6"><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-widest flex items-center gap-1"><Layers size={10} /> Tổng Số Kiện:</span><div className="text-lg font-black text-white">{totalPackages}</div></div><div className="flex flex-col items-end"><span className="text-[9px] font-bold text-[var(--accent)] uppercase tracking-widest flex items-center gap-1"><Scale size={10} /> Tổng Trọng Lượng:</span><div className="text-lg font-black text-white">{totalWeightKg} <span className="text-[10px] text-gray-600">KG</span></div></div></div></div>
         </div>
 
-        {/* --- LARGE SCAN BUTTON --- */}
+        {/* --- LARGE SCAN BUTTON / STATUS --- */}
         <div className="p-4 bg-black border-b border-white/10 flex justify-center">
           <motion.button 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => setIsScannerOpen(true)}
-            className="w-full max-w-sm py-8 bg-gradient-to-r from-[var(--primary)]/20 to-[var(--primary)]/5 border-2 border-[var(--primary)] flex flex-col items-center justify-center gap-3 relative overflow-hidden group transition-all hover:from-[var(--primary)]/30 hover:to-[var(--primary)]/10"
+            className="w-full max-w-sm py-8 bg-gradient-to-r from-[var(--primary)]/10 to-[var(--primary)]/5 border-2 border-dashed border-[var(--primary)]/30 flex flex-col items-center justify-center gap-3 relative overflow-hidden group transition-all hover:from-[var(--primary)]/20 hover:to-[var(--primary)]/10"
           >
-            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[var(--primary)] to-transparent opacity-50" />
-            <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[var(--primary)] to-transparent opacity-50" />
+            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[var(--primary)] to-transparent opacity-30" />
             <div className="relative z-10 flex items-center gap-4">
-              <div className="p-3 bg-[var(--primary)] text-black rounded-sm shadow-[0_0_20px_rgba(var(--primary-rgb),0.5)]">
-                <ScanBarcode size={24} className="group-hover:scale-110 transition-transform duration-500" />
+              <div className="p-3 bg-white/5 text-[var(--primary)] rounded-full border border-[var(--primary)]/20">
+                <RefreshCw size={24} className="animate-[spin_4s_linear_infinite]" />
               </div>
               <div className="flex flex-col items-start">
-                <span className="text-lg font-black text-white uppercase tracking-tighter">QUÉT MÃ VẠCH</span>
-                <span className="text-[9px] font-bold text-[var(--primary)]/70 uppercase tracking-[0.3em]">Bấm để bắt đầu nhặt hàng</span>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-[var(--primary)] rounded-full animate-pulse" />
+                  <span className="text-lg font-black text-white uppercase tracking-tighter">MÁY QUÉT ĐÃ SẴN SÀNG</span>
+                </div>
+                <span className="text-[9px] font-bold text-[var(--primary)]/70 uppercase tracking-[0.3em]">Hỗ trợ AIDC Toolkit & Máy quét cầm tay</span>
               </div>
             </div>
-            
-            {/* Background Decoration */}
-            <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <ScanBarcode size={100} />
-            </div>
+            <div className="mt-2 text-[8px] text-gray-600 uppercase font-bold tracking-widest">Hoặc bấm vào đây để dùng Camera điện thoại</div>
           </motion.button>
         </div>
         <div className="flex-1 overflow-y-auto max-h-[60vh] bg-black">
@@ -164,26 +210,7 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
         <AnimatePresence>
           {isScannerOpen && (
             <BarcodeScanner 
-              onScanSuccess={(code) => {
-                const matched = session.items.find((i: any) => 
-                  (i.barcode && i.barcode.toString().trim() === code.trim()) || 
-                  (i.sku && i.sku.toString().trim() === code.trim())
-                );
-
-                if (matched) {
-                  // Cho phép quét mọi món có trong đơn, kể cả món đã soạn xong để sửa số lượng
-                  setScannedItem(matched);
-                  setIsScannerOpen(false);
-                  try { new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3").play(); } catch(e) {}
-                  if (navigator.vibrate) navigator.vibrate(200);
-                } else {
-                  // Debug: gom danh sách barcode có trong đơn
-                  const availableCodes = session.items.map((i: any) => i.barcode || i.sku).filter(Boolean).join(", ");
-                  setScanWarning(`Mã "${code}" không có trong đơn của ${session.supermarket}!\n\nCác mã đang chờ trong đơn này: ${availableCodes || 'Không có mã nào'}`);
-                  try { new Audio("https://assets.mixkit.co/active_storage/sfx/2859/2859-preview.mp3").play(); } catch(e) {}
-                  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                }
-              }} 
+              onScanSuccess={handleBarcodeScanned} 
               onClose={() => setIsScannerOpen(false)} 
             />
           )}
