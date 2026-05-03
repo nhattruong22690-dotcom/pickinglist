@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { X, Zap, Keyboard, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { createWorker } from "tesseract.js";
+import { ocrExpiryDate } from "@/features/picking/actions/picking";
 
 // Polyfill: import barcode-detector which provides native API or WASM fallback
 import { BarcodeDetector as BarcodeDetectorPolyfill } from "barcode-detector";
@@ -51,28 +51,13 @@ export const BarcodeScanner = ({ onScanSuccess, onClose, mode = "barcode" }: Bar
   const [manualCode, setManualCode] = useState("");
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [ocrFeedback, setOcrFeedback] = useState<string | null>(null);
-  const workerRef = useRef<any>(null);
 
   const onScanRef = useRef(onScanSuccess);
   onScanRef.current = onScanSuccess;
 
-  // --- OCR: Init worker once ---
-  useEffect(() => {
-    if (mode === "ocr") {
-      (async () => {
-        try {
-          const w = await createWorker("eng");
-          workerRef.current = w;
-        } catch (e) { console.error("Tesseract init error", e); }
-      })();
-    }
-    return () => { workerRef.current?.terminate(); workerRef.current = null; };
-  }, [mode]);
-
-  // --- OCR: Capture, crop, preprocess, recognize ---
+  // --- OCR: Capture photo & send to Google Cloud Vision ---
   const handleCaptureAndOcr = async () => {
     if (!videoRef.current || !canvasRef.current || isOcrProcessing) return;
-    if (!workerRef.current) { setOcrFeedback("Đang tải OCR, vui lòng chờ..."); return; }
 
     setIsOcrProcessing(true);
     setOcrFeedback(null);
@@ -82,62 +67,33 @@ export const BarcodeScanner = ({ onScanSuccess, onClose, mode = "barcode" }: Bar
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      const vw = video.videoWidth;
-      const vh = video.videoHeight;
+      // Capture full resolution frame
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
 
-      // Capture wide region (center 90% width, 60% height from 20% to 80%)
-      const cropX = Math.floor(vw * 0.05);
-      const cropY = Math.floor(vh * 0.20);
-      const cropW = Math.floor(vw * 0.90);
-      const cropH = Math.floor(vh * 0.60);
+      // Convert to base64 (JPEG, quality 0.85 to reduce size)
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      const base64 = dataUrl.split(",")[1];
 
-      canvas.width = cropW;
-      canvas.height = cropH;
-      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+      // Send to server for Cloud Vision OCR
+      const result = await ocrExpiryDate(base64);
 
-      // Preprocess: grayscale + contrast boost (not binary)
-      const imgData = ctx.getImageData(0, 0, cropW, cropH);
-      const d = imgData.data;
-      for (let i = 0; i < d.length; i += 4) {
-        let gray = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-        // Boost contrast: stretch range
-        gray = Math.min(255, Math.max(0, (gray - 80) * 1.8));
-        d[i] = d[i + 1] = d[i + 2] = gray;
-      }
-      ctx.putImageData(imgData, 0, 0);
-
-      const { data: { text } } = await workerRef.current.recognize(canvas);
-
-      if (text && text.trim()) {
-        // Try multiple date patterns
-        const patterns = [
-          /(\d{2})[\/\-\.\s](\d{2})[\/\-\.\s](\d{4})/,    // DD/MM/YYYY
-          /(\d{2})[\/\-\.\s](\d{2})[\/\-\.\s](\d{2})(?!\d)/, // DD/MM/YY
-          /(\d{8})/,                                          // DDMMYYYY
-          /(\d{6})(?!\d)/,                                    // DDMMYY
-        ];
-
-        let found = false;
-        for (const p of patterns) {
-          const m = text.match(p);
-          if (m) {
-            playBeep();
-            onScanRef.current(m[0]);
-            setOcrFeedback(null);
-            found = true;
-            break;
-          }
-        }
-
-        if (!found) {
-          setOcrFeedback(`Không tìm thấy ngày. OCR đọc: "${text.trim().slice(0, 50)}"`);
-        }
+      if (result.success && result.date) {
+        playBeep();
+        if (navigator.vibrate) navigator.vibrate(200);
+        onScanRef.current(result.date);
+        setOcrFeedback(null);
+      } else if (result.rawText) {
+        setOcrFeedback(`Không tìm thấy ngày. Đọc được: "${result.rawText}"`);
+      } else if (result.error) {
+        setOcrFeedback(`Lỗi: ${result.error.slice(0, 60)}`);
       } else {
-        setOcrFeedback("Không đọc được ký tự. Hãy đưa HSD gần camera hơn.");
+        setOcrFeedback("Không đọc được ký tự. Đưa HSD gần hơn và chụp lại.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("OCR Error:", err);
-      setOcrFeedback("Lỗi xử lý OCR. Thử lại.");
+      setOcrFeedback("Lỗi kết nối server. Thử lại.");
     } finally {
       setIsOcrProcessing(false);
     }
