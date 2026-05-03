@@ -31,43 +31,37 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
 
       try {
         const html5QrCode = new Html5Qrcode(containerId, {
-          // Chỉ tập trung vào các mã vạch phổ biến trong kho để tăng tốc độ xử lý
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.ITF
-          ],
           verbose: false
         });
         scannerRef.current = html5QrCode;
 
         // Tối ưu hóa cấu hình để quét nhanh và chính xác nhất
         const config = {
-          fps: 20, // Tăng tốc độ khung hình
+          fps: 20,
           qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-            const size = Math.floor(minEdge * 0.7);
-            return { width: size, height: size * 0.6 }; // Khung hình chữ nhật giúp quét barcode tốt hơn
+            // Tăng diện tích quét để dễ bắt mã hơn
+            const width = Math.floor(viewfinderWidth * 0.8);
+            const height = Math.floor(viewfinderHeight * 0.4);
+            return { width, height };
           },
-          aspectRatio: 1.0,
+          // Không ép aspectRatio để lấy độ phân giải gốc của camera
           experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true // Sử dụng API phần cứng của thiết bị nếu có
+            useBarCodeDetectorIfSupported: true
           }
         };
 
         await html5QrCode.start(
           { 
-            facingMode: "environment"
+            facingMode: "environment",
+            // Yêu cầu độ phân giải cao hơn để nhìn rõ mã vạch nhỏ
+            width: { min: 1280, ideal: 1920 },
+            height: { min: 720, ideal: 1080 }
           },
           config,
           (decodedText) => {
             if (isMounted) onScanSuccess(decodedText);
           },
-          () => {} // Ignore frame errors
+          () => {} 
         );
 
         if (isMounted) {
