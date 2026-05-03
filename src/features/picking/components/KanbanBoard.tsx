@@ -179,7 +179,9 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
                   try { new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3").play(); } catch(e) {}
                   if (navigator.vibrate) navigator.vibrate(200);
                 } else {
-                  setScanWarning(`Mã "${code}" không có trong đơn hàng này!`);
+                  // Debug: gom danh sách barcode có trong đơn
+                  const availableCodes = session.items.map((i: any) => i.barcode || i.sku).filter(Boolean).join(", ");
+                  setScanWarning(`Mã "${code}" không có trong đơn!\nCác mã đang chờ: ${availableCodes || 'Không có mã nào trong đơn'}`);
                   try { new Audio("https://assets.mixkit.co/active_storage/sfx/2859/2859-preview.mp3").play(); } catch(e) {}
                   if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
                 }
@@ -268,7 +270,7 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
                   <X size={32} />
                 </div>
                 <h3 className="text-xl font-black text-white uppercase mb-2">CẢNH BÁO</h3>
-                <p className="text-gray-400 text-sm mb-8 leading-relaxed">{scanWarning}</p>
+                <p className="text-gray-400 text-sm mb-8 leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">{scanWarning}</p>
                 <button onClick={() => setScanWarning(null)} className="w-full py-4 bg-red-500 text-white font-black uppercase text-xs tracking-widest hover:brightness-110 transition-all">ĐÃ HIỂU</button>
               </motion.div>
             </motion.div>
