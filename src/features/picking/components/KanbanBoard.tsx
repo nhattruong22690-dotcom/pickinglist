@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { updateSessionStatus, updatePickingItem } from "../actions/picking";
+import { useRouter } from "next/navigation";
 import { BarcodeScanner } from "./BarcodeScanner";
 
 // --- Sub-component for Picking Item Row ---
@@ -428,11 +429,22 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
     PROCESSING: false,
     COMPLETED: false
   });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const router = useRouter();
 
   // Sync state with server props
   useEffect(() => {
     setSessions(initialSessions);
+    setIsSyncing(false); // turn off spinner when data arrives
   }, [initialSessions]);
+
+  const handleSync = () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    router.refresh();
+    // Fallback if data doesn't change
+    setTimeout(() => setIsSyncing(false), 2000);
+  };
 
   const updateItemLocally = (itemId: string, qty: string, picked: boolean) => {
     setSessions(prev => {
@@ -533,14 +545,23 @@ export const KanbanBoard = ({ initialSessions }: { initialSessions: any[] }) => 
   ];
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-8 pb-20 relative">
       {/* Tab Navigation */}
-      <div className="flex bg-white/5 p-1 border border-white/10 rounded-sm">
-        <button onClick={() => setActiveTab("kanban")} className={cn("flex-1 py-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all", activeTab === "kanban" ? "bg-[var(--primary)] text-black shadow-lg" : "text-gray-500 hover:text-white")}>
-          <LayoutDashboard size={16} /> Bảng soạn hàng
-        </button>
-        <button onClick={() => setActiveTab("summary")} className={cn("flex-1 py-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all", activeTab === "summary" ? "bg-[var(--primary)] text-black shadow-lg" : "text-gray-500 hover:text-white")}>
-          <ClipboardList size={16} /> Tổng hợp số lượng
+      <div className="flex gap-2">
+        <div className="flex flex-1 bg-white/5 p-1 border border-white/10 rounded-sm">
+          <button onClick={() => setActiveTab("kanban")} className={cn("flex-1 py-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all", activeTab === "kanban" ? "bg-[var(--primary)] text-black shadow-lg" : "text-gray-500 hover:text-white")}>
+            <LayoutDashboard size={16} /> Bảng soạn hàng
+          </button>
+          <button onClick={() => setActiveTab("summary")} className={cn("flex-1 py-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all", activeTab === "summary" ? "bg-[var(--primary)] text-black shadow-lg" : "text-gray-500 hover:text-white")}>
+            <ClipboardList size={16} /> Tổng hợp số lượng
+          </button>
+        </div>
+        <button 
+          onClick={handleSync} 
+          className="w-[46px] h-[46px] rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center flex-shrink-0 transition-all hover:scale-105 active:scale-95 shadow-lg"
+          title="Đồng bộ dữ liệu từ Google Sheets"
+        >
+          <RefreshCw size={18} className={cn("text-gray-400", isSyncing && "animate-spin text-[var(--primary)]")} />
         </button>
       </div>
 
