@@ -30,6 +30,21 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
       if (!isMounted) return;
 
       try {
+        // --- BƯỚC 1: KÍCH HOẠT QUYỀN TRUY CẬP NATIVE (SỬA LỖI IOS) ---
+        // Trên iOS, đôi khi thư viện không tự kích hoạt được popup hỏi quyền.
+        // Việc gọi trực tiếp getUserMedia sẽ ép iOS hiện popup "Allow Camera" 1 lần duy nhất.
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          // Ngay sau khi được cấp quyền, tắt stream ngay lập tức để nhường quyền cho html5-qrcode
+          stream.getTracks().forEach(track => track.stop());
+        } catch (mediaErr) {
+          // Nếu người dùng từ chối quyền ở bước này, ném lỗi ra ngoài luôn
+          throw new Error("Permission Denied");
+        }
+
+        if (!isMounted) return;
+
+        // --- BƯỚC 2: KHỞI ĐỘNG SCANNER ---
         const html5QrCode = new Html5Qrcode(containerId, {
           verbose: false
         });
@@ -53,9 +68,9 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
         await html5QrCode.start(
           { 
             facingMode: "environment",
-            // Yêu cầu độ phân giải cao hơn để nhìn rõ mã vạch nhỏ
-            width: { min: 1280, ideal: 1920 },
-            height: { min: 720, ideal: 1080 }
+            // Chỉ dùng ideal, bỏ min/max vì iOS rất khắt khe và thường báo lỗi NotReadableError nếu cấu hình không khớp hoàn toàn
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
           },
           config,
           (decodedText) => {
