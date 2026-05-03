@@ -66,7 +66,6 @@ export const BarcodeScanner = ({ onScanSuccess, onClose }: BarcodeScannerProps) 
             width: Math.floor(w * 0.85),
             height: Math.floor(h * 0.35),
           }),
-          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
         },
         (decodedText) => {
           if (isMountedRef.current) {
