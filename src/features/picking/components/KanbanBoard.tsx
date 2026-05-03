@@ -165,18 +165,13 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
           {isScannerOpen && (
             <BarcodeScanner 
               onScanSuccess={(code) => {
-                const matched = session.items.find((i: any) => {
-                  const isMatch = (i.barcode && i.barcode.toString().trim() === code.trim()) || 
-                                  (i.sku && i.sku.toString().trim() === code.trim());
-                  // Ưu tiên tìm những món chưa soạn xong
-                  return isMatch && !i.isPicked && (parseInt(i.actualQty || "0") < i.quantity);
-                }) || session.items.find((i: any) => 
+                const matched = session.items.find((i: any) => 
                   (i.barcode && i.barcode.toString().trim() === code.trim()) || 
                   (i.sku && i.sku.toString().trim() === code.trim())
                 );
 
                 if (matched) {
-                  // Mở modal nhập số lượng cho món tìm được
+                  // Cho phép quét mọi món có trong đơn, kể cả món đã soạn xong để sửa số lượng
                   setScannedItem(matched);
                   setIsScannerOpen(false);
                   try { new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3").play(); } catch(e) {}
@@ -184,7 +179,7 @@ const PickingModal = ({ session, filteredSessions, onClose, onUpdateLocal, onSwi
                 } else {
                   // Debug: gom danh sách barcode có trong đơn
                   const availableCodes = session.items.map((i: any) => i.barcode || i.sku).filter(Boolean).join(", ");
-                  setScanWarning(`Mã "${code}" không có trong đơn!\nCác mã đang chờ: ${availableCodes || 'Không có mã nào trong đơn'}`);
+                  setScanWarning(`Mã "${code}" không có trong đơn của ${session.supermarket}!\n\nCác mã đang chờ trong đơn này: ${availableCodes || 'Không có mã nào'}`);
                   try { new Audio("https://assets.mixkit.co/active_storage/sfx/2859/2859-preview.mp3").play(); } catch(e) {}
                   if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
                 }
