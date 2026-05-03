@@ -6,7 +6,7 @@ import {
   Clock, Play, CheckCircle, MoreVertical, Package, ArrowRight, Store, 
   Check, Save, Weight, Box, Search, Calendar, X, ChevronRight,
   ChevronLeft, ArrowLeft, ChevronDown, Scale, Layers, ChevronUp,
-  LayoutDashboard, ClipboardList, Filter, Boxes, ScanBarcode
+  LayoutDashboard, ClipboardList, Filter, Boxes, ScanBarcode, RefreshCw
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { updateSessionStatus, updatePickingItem } from "../actions/picking";
